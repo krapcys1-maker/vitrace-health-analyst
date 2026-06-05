@@ -440,6 +440,41 @@ interface DailySummaryDao {
 
     @Query(
         """
+        WITH walking_days AS (
+            SELECT
+                date AS activityDate,
+                COALESCE(SUM(distanceMeters), 0) / 1000.0 AS walkingKm
+            FROM workout_sessions
+            WHERE workoutType = 'walking'
+              AND date < :beforeDate
+              AND distanceMeters >= 1000
+              AND durationSeconds BETWEEN 600 AND 21600
+              AND avgPaceSecondsPerKm BETWEEN 480 AND 2400
+            GROUP BY date
+        )
+        SELECT
+            a.date AS activityDate,
+            s.date AS sleepDate,
+            a.steps AS steps,
+            COALESCE(w.walkingKm, 0.0) AS walkingKm,
+            s.totalSleepMinutes AS totalSleepMinutes,
+            s.remSleepMinutes AS remSleepMinutes,
+            s.deepSleepMinutes AS deepSleepMinutes,
+            s.sleepScore AS sleepScore
+        FROM daily_activity_summaries a
+        INNER JOIN sleep_details s ON date(a.date, '+1 day') = s.date
+        LEFT JOIN walking_days w ON w.activityDate = a.date
+        WHERE a.date < :beforeDate
+          AND s.date < :beforeDate
+          AND a.steps > 0
+          AND s.totalSleepMinutes > 0
+        ORDER BY a.date ASC
+        """
+    )
+    suspend fun activityWorkoutSleepLoadRowsBefore(beforeDate: String): List<ActivityWorkoutSleepLoadRow>
+
+    @Query(
+        """
         SELECT
             h.date AS date,
             h.avgBpm AS avgBpm,

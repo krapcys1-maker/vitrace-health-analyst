@@ -215,14 +215,16 @@ private fun DataRealityScreen(
 
     val insights = diagnostics.insights
     var selectedSection by remember { mutableStateOf(InsightSection.Summary) }
+    val rankedInsights = insights.mainScreenRanked()
     val sectionInsights = insights.filterForSection(selectedSection)
 
     RealityHeroCard(
-        title = "Wnioski",
-        answer = "Wybierz obszar i czytaj tylko konkretne analizy.",
+        title = "Najwazniejsze teraz",
+        answer = rankedInsights.firstOrNull()?.answer
+            ?: "Najpierw trzeba przeliczyc lokalne wnioski.",
         evidence = listOf(
-            "wnioski: ${insights.size}",
-            "wysoka pewnosc: ${insights.count { insight -> insight.confidence == AnalysisConfidence.High }}",
+            "priorytety: ${rankedInsights.size}",
+            "najmocniejszy obszar: ${rankedInsights.firstOrNull()?.domain ?: "brak"}",
         ),
     )
 
@@ -248,19 +250,12 @@ private fun DataRealityScreen(
 private enum class InsightSection(
     val label: String,
     val domains: Set<String>,
-    val priorityIds: Set<String> = emptySet(),
     val emptyTitle: String,
     val emptyText: String,
 ) {
     Summary(
         label = "Najwazniejsze",
         domains = emptySet(),
-        priorityIds = setOf(
-            "long_term_steps_km",
-            "sleep_debt_window",
-            "heart_outlier_context",
-            "walking_efficiency_by_distance_band",
-        ),
         emptyTitle = "Brak priorytetow",
         emptyText = "Najpierw trzeba przeliczyc lokalne insighty.",
     ),
@@ -360,9 +355,43 @@ private fun SectionButton(
 
 private fun List<TestedInsight>.filterForSection(section: InsightSection): List<TestedInsight> {
     return when (section) {
-        InsightSection.Summary -> filter { insight -> insight.id in section.priorityIds }
+        InsightSection.Summary -> mainScreenRanked()
         else -> filter { insight -> insight.domain in section.domains }
     }
+}
+
+private fun List<TestedInsight>.mainScreenRanked(limit: Int = 5): List<TestedInsight> {
+    val sorted = filter { insight ->
+        insight.id != "data_coverage_reality" &&
+            insight.confidence != AnalysisConfidence.Insufficient
+    }.sortedWith(
+        compareByDescending<TestedInsight> { insight -> insight.mainPriorityScore() }
+            .thenBy { insight -> insight.id },
+    )
+    val result = mutableListOf<TestedInsight>()
+    sorted.forEach { insight ->
+        val sameDomainCount = result.count { item -> item.domain == insight.domain }
+        if (sameDomainCount < 2) {
+            result += insight
+        }
+    }
+    return result.take(limit)
+}
+
+private fun TestedInsight.mainPriorityScore(): Double {
+    val base = when (id) {
+        "activity_workout_sleep_load" -> 120.0
+        "walking_efficiency_by_distance_band" -> 110.0
+        "sleep_debt_window" -> 104.0
+        "long_term_steps_km" -> 96.0
+        "sleep_next_day_activity" -> 90.0
+        "sleep_monthly_baseline" -> 86.0
+        "heart_outlier_context" -> 72.0
+        "activity_sleep_same_night" -> 68.0
+        "training_day_sleep" -> 60.0
+        else -> 50.0
+    }
+    return base + confidence.rank() * 4.0 + sampleSize.coerceAtMost(150) / 50.0
 }
 
 @Composable

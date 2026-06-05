@@ -112,6 +112,17 @@ data class SleepNextDayActivityRow(
     val nextDayAvgHeartRateBpm: Double?,
 )
 
+data class ActivityWorkoutSleepLoadRow(
+    val activityDate: String,
+    val sleepDate: String,
+    val steps: Long,
+    val walkingKm: Double,
+    val totalSleepMinutes: Long,
+    val remSleepMinutes: Long?,
+    val deepSleepMinutes: Long?,
+    val sleepScore: Int?,
+)
+
 data class HeartContextRow(
     val date: String,
     val avgBpm: Double,

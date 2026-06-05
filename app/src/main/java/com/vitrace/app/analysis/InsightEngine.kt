@@ -2,6 +2,7 @@ package com.vitrace.app.analysis
 
 import com.vitrace.app.data.AnalysisResultEntity
 import com.vitrace.app.data.ActivityPeriodAggregate
+import com.vitrace.app.data.ActivityWorkoutSleepLoadRow
 import com.vitrace.app.data.HeartContextRow
 import com.vitrace.app.data.MonthlySleepPhaseAggregate
 import com.vitrace.app.data.SleepActivityFeatureRow
@@ -21,6 +22,7 @@ import kotlin.math.sqrt
 private const val TESTED_INSIGHT_ANALYSIS_TYPE = "tested_insight"
 private const val TESTED_INSIGHT_ENGINE_VERSION = "tested_insight_v1"
 private const val TESTED_INSIGHT_RETENTION = 10
+private const val LONG_WALK_SLEEP_MIN_DISTANCE_KM = 8.0
 
 data class TestedInsight(
     val id: String,
@@ -82,6 +84,7 @@ object InsightEngine {
         val bestActivityMonth = dao.bestActivityMonthBefore(todayText)
         val monthlySleep = dao.monthlySleepPhasesBefore(beforeDate = todayText, limit = 8)
         val sleepWindowRows = dao.sleepWindowRowsBefore(todayText)
+        val workoutSleepLoadRows = dao.activityWorkoutSleepLoadRowsBefore(todayText)
         val heartContextRows = dao.heartContextRowsBefore(todayText)
         val currentWalkingBands = dao.walkingBandsBetween(
             startDate = currentStart.toString(),
@@ -103,6 +106,7 @@ object InsightEngine {
             ),
             buildMonthlySleepBaselineInsight(monthlySleep),
             buildSleepDebtInsight(sleepWindowRows),
+            buildActivityWorkoutSleepLoadInsight(workoutSleepLoadRows),
             buildSameNightSleepInsight(sleepActivityRows),
             buildNextDayActivityInsight(nextDayRows),
             buildTrainingSleepInsight(trainingSleepRows),
@@ -326,6 +330,89 @@ object InsightEngine {
                 "fazy snu z zegarka traktujemy jako trend",
             ),
             nextStep = "dodac test: trening dzienny/wieczorny kontra REM, gleboki sen i score",
+        )
+    }
+
+    private fun buildActivityWorkoutSleepLoadInsight(
+        rows: List<ActivityWorkoutSleepLoadRow>,
+    ): TestedInsight {
+        if (rows.size < 30) {
+            return TestedInsight(
+                id = "activity_workout_sleep_load",
+                domain = "Regeneracja",
+                title = "Czy rodzaj obciazenia zmienia nastepny sen?",
+                answer = "Mamy za malo par aktywnosc -> nastepny sen, zeby rozdzielic same wysokie kroki od dlugich marszow.",
+                evidence = listOf("pary aktywnosc -> sen: ${rows.size}"),
+                dateRange = dateRangeForWorkoutSleepLoadRows(rows),
+                sampleSize = rows.size,
+                confidence = AnalysisConfidence.Insufficient,
+                limitations = listOf("minimum do tego testu to 30 par aktywnosc -> nastepny sen"),
+                nextStep = "zbierac kolejne noce po aktywnych dniach i dlugich marszach",
+            )
+        }
+
+        val sortedSteps = rows.map { row -> row.steps }.sorted()
+        val lowThreshold = sortedSteps[sortedSteps.size / 4]
+        val highThreshold = sortedSteps[(sortedSteps.size * 3) / 4]
+        val typicalRows = rows.filter { row ->
+            row.steps > lowThreshold &&
+                row.steps < highThreshold &&
+                row.walkingKm < LONG_WALK_SLEEP_MIN_DISTANCE_KM
+        }
+        val highNoLongRows = rows.filter { row ->
+            row.steps >= highThreshold &&
+                row.walkingKm < LONG_WALK_SLEEP_MIN_DISTANCE_KM
+        }
+        val longWalkRows = rows.filter { row ->
+            row.walkingKm >= LONG_WALK_SLEEP_MIN_DISTANCE_KM
+        }
+
+        val typical = SleepLoadGroup.from("typowy dzien", typicalRows)
+        val highNoLong = SleepLoadGroup.from("wysokie kroki bez dlugiego marszu", highNoLongRows)
+        val longWalk = SleepLoadGroup.from("dlugi marsz 8+ km", longWalkRows)
+        val highRemDelta = highNoLong.avgRemMinutes.minusNullable(typical.avgRemMinutes)
+        val highScoreDelta = highNoLong.avgSleepScore.minusNullable(typical.avgSleepScore)
+        val longTotalDelta = longWalk.avgTotalSleepMinutes.minusNullable(typical.avgTotalSleepMinutes)
+        val longScoreDelta = longWalk.avgSleepScore.minusNullable(typical.avgSleepScore)
+        val confidence = confidenceForSleepLoadGroups(
+            typical.days,
+            highNoLong.days,
+            longWalk.days,
+        )
+        val interpretation = when {
+            confidence == AnalysisConfidence.Insufficient ->
+                "Probka jest jeszcze za mala, zeby mocno rozdzielic same wysokie kroki od dlugich marszow."
+            (highRemDelta ?: 0.0) <= -10.0 && (longTotalDelta ?: 0.0) <= -20.0 ->
+                "Wysokie kroki bez dlugiego marszu obnizaja REM, a dlugi marsz dodatkowo skraca sen."
+            (longTotalDelta ?: 0.0) <= -20.0 && (longScoreDelta ?: 0.0) <= -3.0 ->
+                "Dlugi marsz wyglada jak wieksze obciazenie regeneracji niz same wysokie kroki."
+            (highRemDelta ?: 0.0) <= -10.0 || (highScoreDelta ?: 0.0) <= -2.0 ->
+                "Same wysokie kroki wygladaja na koszt dla regeneracji, nawet bez dlugiego marszu."
+            (longTotalDelta ?: 0.0) <= -20.0 || (longScoreDelta ?: 0.0) <= -3.0 ->
+                "Dlugi marsz wyglada na osobny koszt regeneracyjny."
+            else -> "Po rozdzieleniu obciazenia nie ma jednej wyraznej roznicy w nastepnym snie."
+        }
+
+        return TestedInsight(
+            id = "activity_workout_sleep_load",
+            domain = "Regeneracja",
+            title = "Czy rodzaj obciazenia zmienia nastepny sen?",
+            answer = interpretation,
+            evidence = listOf(
+                "pary aktywnosc -> sen: ${rows.size}",
+                "typowy dzien: ${typical.days} dni, ${typical.avgSteps.format0()} krokow, sen ${typical.avgTotalSleepMinutes.formatMinutes()}, REM ${typical.avgRemMinutes.format0()}, score ${typical.avgSleepScore.format0()}",
+                "wysokie kroki bez dlugiego marszu: ${highNoLong.days} dni, ${highNoLong.avgSteps.format0()} krokow, REM ${highRemDelta.formatSigned0()} min, score ${highScoreDelta.formatSigned0()}",
+                "dlugi marsz 8+ km: ${longWalk.days} dni, ${longWalk.avgWalkingKm.format1()} km, sen ${longTotalDelta.formatSigned0()} min, score ${longScoreDelta.formatSigned0()}",
+            ),
+            dateRange = dateRangeForWorkoutSleepLoadRows(rows),
+            sampleSize = rows.size,
+            confidence = confidence,
+            limitations = listOf(
+                "to jest porownanie obserwacyjne, nie dowod przyczyny",
+                "nie kontroluje pory dnia, pogody, pracy, stresu i trasy",
+                "fazy snu z zegarka traktujemy jako trend",
+            ),
+            nextStep = "dodac godzine treningu i porownanie podobnych tras, zeby sprawdzic koszt regeneracyjny",
         )
     }
 
@@ -660,11 +747,31 @@ private fun confidenceForGroups(
     }
 }
 
+private fun confidenceForSleepLoadGroups(
+    typicalDays: Int,
+    highNoLongDays: Int,
+    longWalkDays: Int,
+): AnalysisConfidence {
+    return when {
+        typicalDays < 20 || highNoLongDays < 10 || longWalkDays < 8 -> AnalysisConfidence.Insufficient
+        typicalDays >= 80 && highNoLongDays >= 30 && longWalkDays >= 25 -> AnalysisConfidence.High
+        typicalDays >= 30 && highNoLongDays >= 15 && longWalkDays >= 10 -> AnalysisConfidence.Medium
+        else -> AnalysisConfidence.Low
+    }
+}
+
 private fun dateRangeForSleepActivity(rows: List<SleepActivityFeatureRow>): String {
     if (rows.isEmpty()) {
         return "brak danych"
     }
     return "${rows.first().date} - ${rows.last().date}"
+}
+
+private fun dateRangeForWorkoutSleepLoadRows(rows: List<ActivityWorkoutSleepLoadRow>): String {
+    if (rows.isEmpty()) {
+        return "brak danych"
+    }
+    return "${rows.first().activityDate} - ${rows.last().sleepDate}"
 }
 
 private fun dateRangeForNextDayRows(rows: List<SleepNextDayActivityRow>): String {
@@ -686,6 +793,35 @@ private fun dateRangeForSleepWindowRows(rowsDescending: List<SleepWindowRow>): S
         return "brak danych"
     }
     return "${rowsDescending.last().date} - ${rowsDescending.first().date}"
+}
+
+private data class SleepLoadGroup(
+    val label: String,
+    val days: Int,
+    val avgSteps: Double?,
+    val avgWalkingKm: Double?,
+    val avgTotalSleepMinutes: Double?,
+    val avgRemMinutes: Double?,
+    val avgDeepMinutes: Double?,
+    val avgSleepScore: Double?,
+) {
+    companion object {
+        fun from(
+            label: String,
+            rows: List<ActivityWorkoutSleepLoadRow>,
+        ): SleepLoadGroup {
+            return SleepLoadGroup(
+                label = label,
+                days = rows.size,
+                avgSteps = rows.map { row -> row.steps }.averageOrNull(),
+                avgWalkingKm = rows.map { row -> row.walkingKm }.averageOrNull(),
+                avgTotalSleepMinutes = rows.map { row -> row.totalSleepMinutes }.averageOrNull(),
+                avgRemMinutes = rows.mapNotNull { row -> row.remSleepMinutes }.averageOrNull(),
+                avgDeepMinutes = rows.mapNotNull { row -> row.deepSleepMinutes }.averageOrNull(),
+                avgSleepScore = rows.mapNotNull { row -> row.sleepScore }.averageOrNull(),
+            )
+        }
+    }
 }
 
 private fun <T : Number> List<T>.averageOrNull(): Double? {
