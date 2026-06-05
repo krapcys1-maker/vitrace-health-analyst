@@ -48,6 +48,7 @@ Local Mi Fitness export summary:
 - Android app now has an initial Room database (`vitrace.db`) with Health Connect quality snapshots.
 - Room now includes normalized daily summary tables for activity, heart, sleep, workouts, and body metrics.
 - The first Android dashboard reads from local daily summary tables, not directly from Health Connect.
+- App launch loads the local dashboard cache first. The `Refresh` button performs the heavier Health Connect sync to avoid hitting Health Connect API quotas on every app open.
 - AI is not the first milestone.
 - Future AI may use DeepSeek only with aggregated summaries and explicit user consent.
 - Future photo/scan imports need an architectural opening now, but OCR is not part of MVP.
@@ -88,6 +89,7 @@ Local Mi Fitness export summary:
 | 2026-06-05 | `vitrace/mvp-foundation` | Added Room and a Health Connect Data Quality screen that records per-metric 1/7/30-day counts, origins, and last record timestamps. | `:app:assembleDebug` passed; APK installed with ADB; screenshots/UI dump verified on device. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Added normalized daily summary tables and foreground Health Connect sync for the last 30 days; documented historical import rules. | `:app:assembleDebug` passed; APK installed with ADB; UI verified on device with local daily summary counts. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Added first local-database dashboard with Today, 7-day, 30-day activity windows and signal coverage. | `:app:assembleDebug` passed; APK installed with ADB; dashboard screenshot/UI dump verified on device. |
+| 2026-06-05 | `vitrace/mvp-foundation` | Redesigned the dashboard into readable cards and changed startup to load cached local data before manual Health Connect refresh. | `:app:assembleDebug` passed; APK installed with ADB; screenshot/UI dump verified on device. |
 
 ## Update Protocol
 

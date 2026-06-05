@@ -58,10 +58,24 @@ object HealthConnectDiagnosticsRepository {
         }
     }
 
-    suspend fun load(context: Context): HealthConnectDiagnostics {
+    suspend fun load(
+        context: Context,
+        syncFromHealthConnect: Boolean,
+    ): HealthConnectDiagnostics {
         val database = VitaTraceDatabase.get(context)
         val sdkStatus = getSdkStatus(context)
         val end = Instant.now()
+
+        if (!syncFromHealthConnect) {
+            return HealthConnectDiagnostics(
+                sdkStatus = sdkStatus,
+                requiredPermissionCount = requiredPermissions.size,
+                dashboard = database.loadDashboard(end),
+                savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
+                dailySyncSummary = database.loadDailySyncSummary(),
+            )
+        }
+
         if (sdkStatus != HealthConnectSdkStatus.Available) {
             return HealthConnectDiagnostics(
                 sdkStatus = sdkStatus,

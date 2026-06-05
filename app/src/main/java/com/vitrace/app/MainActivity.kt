@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -30,6 +32,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -85,21 +88,24 @@ private fun HealthConnectScreen() {
     ) {
         scope.launch {
             loading = true
-            diagnostics = HealthConnectDiagnosticsRepository.load(context)
+            diagnostics = HealthConnectDiagnosticsRepository.load(context, syncFromHealthConnect = true)
             loading = false
         }
     }
 
-    fun refresh() {
+    fun refresh(syncFromHealthConnect: Boolean) {
         scope.launch {
             loading = true
-            diagnostics = HealthConnectDiagnosticsRepository.load(context)
+            diagnostics = HealthConnectDiagnosticsRepository.load(
+                context = context,
+                syncFromHealthConnect = syncFromHealthConnect,
+            )
             loading = false
         }
     }
 
     LaunchedEffect(Unit) {
-        refresh()
+        refresh(syncFromHealthConnect = false)
     }
 
     Column(
@@ -119,7 +125,7 @@ private fun HealthConnectScreen() {
                     permissionLauncher.launch(HealthConnectDiagnosticsRepository.requiredPermissions)
                 }
             },
-            onRefresh = { refresh() },
+            onRefresh = { refresh(syncFromHealthConnect = true) },
         )
         DashboardSection(dashboard = diagnostics?.dashboard, loading = loading)
         StatusSection(diagnostics = diagnostics, loading = loading)
@@ -157,7 +163,7 @@ private fun Header() {
             color = Color(0xFF0F172A),
         )
         Text(
-            text = "Personal health dashboard",
+            text = "Dashboard zdrowia",
             style = MaterialTheme.typography.titleMedium,
             color = Color(0xFF475569),
         )
@@ -203,10 +209,10 @@ private fun DashboardSection(
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        SectionTitle("Dashboard")
         if (dashboard == null) {
+            SectionTitle("Dashboard")
             InfoRow(
                 label = "Status",
                 value = if (loading) "syncing" else "pending",
@@ -215,64 +221,185 @@ private fun DashboardSection(
             return
         }
 
-        InfoRow(
-            label = "Last sync",
-            value = dashboard.lastSyncedAt ?: "none",
-            quality = if (dashboard.lastSyncedAt == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
-        )
-        ActivityWindowSection(title = "Today", window = dashboard.today)
-        ActivityWindowSection(title = "7 days", window = dashboard.last7Days)
-        ActivityWindowSection(title = "30 days", window = dashboard.last30Days)
-        SectionTitle("Signal coverage")
-        InfoRow(
-            label = "Heart days",
-            value = dashboard.signalCounts.heartDays.toString(),
-            quality = dashboard.signalCounts.heartDays.qualityForCount(),
-        )
-        InfoRow(
-            label = "Sleep days",
-            value = dashboard.signalCounts.sleepDays.toString(),
-            quality = dashboard.signalCounts.sleepDays.qualityForCount(),
-        )
-        InfoRow(
-            label = "Workout days",
-            value = dashboard.signalCounts.workoutDays.toString(),
-            quality = dashboard.signalCounts.workoutDays.qualityForCount(),
-        )
-        InfoRow(
-            label = "Body days",
-            value = dashboard.signalCounts.bodyDays.toString(),
-            quality = dashboard.signalCounts.bodyDays.qualityForCount(),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SectionTitle("Dzisiaj")
+            Text(
+                text = dashboard.lastSyncedAt ?: "brak sync",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF64748B),
+                textAlign = TextAlign.End,
+            )
+        }
+        TodayTiles(window = dashboard.today)
+        SectionTitle("Ostatnie okresy")
+        PeriodSummaryCard(title = "7 dni", window = dashboard.last7Days)
+        PeriodSummaryCard(title = "30 dni", window = dashboard.last30Days)
+        SectionTitle("Pokrycie danych")
+        CoverageCard(
+            heartDays = dashboard.signalCounts.heartDays,
+            sleepDays = dashboard.signalCounts.sleepDays,
+            workoutDays = dashboard.signalCounts.workoutDays,
+            bodyDays = dashboard.signalCounts.bodyDays,
         )
     }
 }
 
 @Composable
-private fun ActivityWindowSection(
+private fun TodayTiles(window: ActivityWindow) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            MetricTile(
+                label = "Kroki",
+                value = window.steps.toString(),
+                quality = window.steps.qualityForCount(),
+                modifier = Modifier.weight(1f),
+            )
+            MetricTile(
+                label = "Aktywne kcal",
+                value = "${window.activeCaloriesKcal.format0()} kcal",
+                quality = window.activeCaloriesKcal.qualityForPositive(),
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            MetricTile(
+                label = "Dystans",
+                value = "${window.distanceKm.format1()} km",
+                quality = window.distanceKm.qualityForPositive(),
+                modifier = Modifier.weight(1f),
+            )
+            MetricTile(
+                label = "Dni aktywne",
+                value = window.daysWithActivity.toString(),
+                quality = window.daysWithActivity.qualityForCount(),
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun MetricTile(
+    label: String,
+    value: String,
+    quality: DiagnosticQuality,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF64748B),
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.headlineSmall,
+                color = quality.color(),
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PeriodSummaryCard(
     title: String,
     window: ActivityWindow,
 ) {
-    SectionTitle(title)
-    InfoRow(
-        label = "Steps",
-        value = window.steps.toString(),
-        quality = window.steps.qualityForCount(),
-    )
-    InfoRow(
-        label = "Active kcal",
-        value = "${window.activeCaloriesKcal.format0()} kcal",
-        quality = window.activeCaloriesKcal.qualityForPositive(),
-    )
-    InfoRow(
-        label = "Distance",
-        value = "${window.distanceKm.format1()} km",
-        quality = window.distanceKm.qualityForPositive(),
-    )
-    InfoRow(
-        label = "Active days",
-        value = window.daysWithActivity.toString(),
-        quality = window.daysWithActivity.qualityForCount(),
-    )
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color(0xFF0F172A),
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = "${window.daysWithActivity} aktywnych dni",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = window.daysWithActivity.qualityForCount().color(),
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            CompactMetricRow(label = "Kroki", value = window.steps.toString(), quality = window.steps.qualityForCount())
+            CompactMetricRow(label = "Aktywne kcal", value = "${window.activeCaloriesKcal.format0()} kcal", quality = window.activeCaloriesKcal.qualityForPositive())
+            CompactMetricRow(label = "Dystans", value = "${window.distanceKm.format1()} km", quality = window.distanceKm.qualityForPositive())
+        }
+    }
+}
+
+@Composable
+private fun CoverageCard(
+    heartDays: Int,
+    sleepDays: Int,
+    workoutDays: Int,
+    bodyDays: Int,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            CompactMetricRow(label = "Puls", value = "$heartDays / 30 dni", quality = heartDays.qualityForCount())
+            CompactMetricRow(label = "Sen", value = "$sleepDays / 30 dni", quality = sleepDays.qualityForCount())
+            CompactMetricRow(label = "Trening", value = "$workoutDays / 30 dni", quality = workoutDays.qualityForCount())
+            CompactMetricRow(label = "Cialo", value = "$bodyDays / 30 dni", quality = bodyDays.qualityForCount())
+        }
+    }
+}
+
+@Composable
+private fun CompactMetricRow(
+    label: String,
+    value: String,
+    quality: DiagnosticQuality,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color(0xFF475569),
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = quality.color(),
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.End,
+        )
+    }
 }
 
 @Composable
@@ -313,9 +440,9 @@ private fun DailySyncSection(summary: DailySyncSummary?) {
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        SectionTitle("Local daily summaries")
+        SectionTitle("Lokalna baza")
         InfoRow(
-            label = "Last sync",
+            label = "Ostatnia sync",
             value = summary.lastSyncedAt ?: "none",
             quality = if (summary.lastSyncedAt == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
         )
@@ -377,7 +504,7 @@ private fun DataQualitySection(items: List<DataQualityItem>) {
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        SectionTitle("Data quality")
+        SectionTitle("Jakosc zrodel")
         items.forEachIndexed { index, item ->
             if (index > 0) {
                 HorizontalDivider(color = Color(0xFFE2E8F0))
@@ -389,49 +516,36 @@ private fun DataQualitySection(items: List<DataQualityItem>) {
 
 @Composable
 private fun DataQualityRow(item: DataQualityItem) {
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
                 text = item.label,
-                modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyLarge,
                 color = Color(0xFF334155),
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = item.statusLabel(),
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 12.dp),
-                style = MaterialTheme.typography.bodyLarge,
-                color = item.quality.color(),
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.End,
+                text = "1d ${item.count1d} | 7d ${item.count7d} | 30d ${item.count30d}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF64748B),
             )
         }
         Text(
-            text = "1d ${item.count1d} | 7d ${item.count7d} | 30d ${item.count30d}",
+            text = item.statusLabel(),
+            modifier = Modifier.padding(start = 12.dp),
             style = MaterialTheme.typography.bodyMedium,
-            color = Color(0xFF475569),
-        )
-        Text(
-            text = "source: ${item.origins.joinToString().ifBlank { "none" }}",
-            style = MaterialTheme.typography.bodyMedium,
-            color = Color(0xFF475569),
-        )
-        Text(
-            text = "last: ${item.lastRecordAt ?: "none"}",
-            style = MaterialTheme.typography.bodyMedium,
-            color = Color(0xFF475569),
+            color = item.quality.color(),
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.End,
         )
     }
 }
