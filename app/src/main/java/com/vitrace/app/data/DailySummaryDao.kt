@@ -242,7 +242,7 @@ interface DailySummaryDao {
     @Query(
         """
         SELECT
-            COUNT(CASE WHEN weightRecordCount > 0 OR vo2MaxRecordCount > 0 OR spo2RecordCount > 0 THEN 1 END) AS bodyDays,
+            COUNT(CASE WHEN weightRecordCount > 0 THEN 1 END) AS bodyDays,
             COALESCE(SUM(weightRecordCount), 0) AS weightRecords,
             COALESCE(SUM(vo2MaxRecordCount), 0) AS vo2Records,
             COALESCE(SUM(spo2RecordCount), 0) AS spo2Records
@@ -254,10 +254,10 @@ interface DailySummaryDao {
     @Query(
         """
         SELECT * FROM daily_body_summaries
-        WHERE weightRecordCount > 0 OR vo2MaxRecordCount > 0 OR spo2RecordCount > 0
+        WHERE weightRecordCount > 0
         ORDER BY date DESC
         LIMIT 1
         """
     )
-    suspend fun latestBody(): DailyBodySummaryEntity?
+    suspend fun latestWeight(): DailyBodySummaryEntity?
 }

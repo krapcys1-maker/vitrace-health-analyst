@@ -150,14 +150,12 @@ data class WorkoutTypeDaySummary(
 )
 
 data class BodyDomainSummary(
-    val bodyDays: Int,
+    val scaleDays: Int,
     val weightRecords: Int,
-    val vo2Records: Int,
-    val spo2Records: Int,
-    val latestDate: String?,
+    val bodyFatRecords: Int,
+    val muscleRecords: Int,
+    val latestWeightDate: String?,
     val latestWeightKg: Double?,
-    val latestVo2Max: Double?,
-    val latestSpo2Percent: Double?,
 )
 
 data class HealthJournalSummary(

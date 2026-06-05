@@ -701,16 +701,14 @@ object HealthConnectDiagnosticsRepository {
     private suspend fun VitaTraceDatabase.loadBodyDomainSummary(): BodyDomainSummary {
         val dao = dailySummaryDao()
         val counts = dao.bodySignalCounts()
-        val latest = dao.latestBody()
+        val latestWeight = dao.latestWeight()
         return BodyDomainSummary(
-            bodyDays = counts.bodyDays,
+            scaleDays = counts.bodyDays,
             weightRecords = counts.weightRecords,
-            vo2Records = counts.vo2Records,
-            spo2Records = counts.spo2Records,
-            latestDate = latest?.date,
-            latestWeightKg = latest?.latestWeightKg,
-            latestVo2Max = latest?.latestVo2Max,
-            latestSpo2Percent = latest?.latestSpo2Percent,
+            bodyFatRecords = 0,
+            muscleRecords = 0,
+            latestWeightDate = latestWeight?.date,
+            latestWeightKg = latestWeight?.latestWeightKg,
         )
     }
 

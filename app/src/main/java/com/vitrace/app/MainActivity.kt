@@ -588,8 +588,8 @@ private fun WeightTab(summary: BodyDomainSummary?) {
         SectionTitle("Waga")
         if (summary == null) {
             AnalysisCard(
-                title = "Brak danych ciala",
-                lines = listOf("waga i sklad ciala wejda z importu albo recznie"),
+                title = "Brak danych z wagi",
+                lines = listOf("masa, tluszcz i miesnie wejda pozniej z wagi albo wpisu recznego"),
                 quality = DiagnosticQuality.Warning,
             )
             return
@@ -602,21 +602,21 @@ private fun WeightTab(summary: BodyDomainSummary?) {
         when (section) {
             0 -> BodyLatestCard(summary)
             1 -> AnalysisCard(
-                title = "Pokrycie danych ciala",
+                title = "Pokrycie masy i skladu",
                 lines = listOf(
-                    "dni z danymi: ${summary.bodyDays}",
-                    "waga: ${summary.weightRecords} rekordow",
-                    "VO2 max: ${summary.vo2Records} rekordow",
-                    "SpO2: ${summary.spo2Records} rekordow",
+                    "dni z masa: ${summary.scaleDays}",
+                    "masa: ${summary.weightRecords} zapisow",
+                    "tluszcz: brak danych",
+                    "miesnie: brak danych",
                 ),
-                quality = summary.bodyDays.qualityForCount(),
+                quality = summary.scaleDays.qualityForCount(),
             )
             else -> AnalysisCard(
                 title = "Docelowo",
                 lines = listOf(
-                    "wykres wagi, miesni, tluszczu i nawodnienia",
-                    "reczne wpisy albo import ze zdjecia wyniku z wagi",
-                    "korelacja: waga, puls, sen i meczliwosc",
+                    "wykres wagi, tluszczu, miesni i nawodnienia",
+                    "reczne wpisy albo import ze zdjecia/skanu z wagi",
+                    "analiza: sklad ciala kontra puls, sen, sport i notatki",
                 ),
                 quality = DiagnosticQuality.Neutral,
             )
@@ -636,30 +636,30 @@ private fun BodyLatestCard(summary: BodyDomainSummary) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                text = "Ostatnie dane",
+                text = "Masa i sklad ciala",
                 style = MaterialTheme.typography.titleMedium,
                 color = Color(0xFF0F172A),
                 fontWeight = FontWeight.Bold,
             )
             CompactMetricRow(
-                label = "Data",
-                value = summary.latestDate ?: "brak",
-                quality = if (summary.latestDate == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
+                label = "Status",
+                value = "brak skladu ciala",
+                quality = DiagnosticQuality.Warning,
             )
             CompactMetricRow(
-                label = "Waga",
+                label = "Ostatni zapis masy",
                 value = summary.latestWeightKg?.let { "${it.format1()} kg" } ?: "brak",
                 quality = if (summary.latestWeightKg == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
             )
             CompactMetricRow(
-                label = "VO2 max",
-                value = summary.latestVo2Max?.format1() ?: "brak",
-                quality = if (summary.latestVo2Max == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
+                label = "Data zapisu",
+                value = summary.latestWeightDate ?: "brak",
+                quality = if (summary.latestWeightDate == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
             )
             CompactMetricRow(
-                label = "SpO2",
-                value = summary.latestSpo2Percent?.let { "${it.format1()}%" } ?: "brak",
-                quality = if (summary.latestSpo2Percent == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
+                label = "Tluszcz / miesnie",
+                value = "brak danych",
+                quality = DiagnosticQuality.Warning,
             )
         }
     }
@@ -857,7 +857,7 @@ private fun AnalysisTab(
                     lines = listOf(
                         "sen: ${sleepSummary?.last30SleepDays ?: 0} dni w ostatnim oknie",
                         "sport: ${sportSummary?.last30Days?.daysWithActivity ?: 0} aktywnych dni",
-                        "waga/cialo: ${bodySummary?.bodyDays ?: 0} dni z sygnalem",
+                        "waga/sklad: ${bodySummary?.scaleDays ?: 0} dni z pomiarem",
                     ),
                     quality = if ((sleepSummary?.last30SleepDays ?: 0) >= 14 && (sportSummary?.last30Days?.daysWithActivity ?: 0) >= 14) {
                         DiagnosticQuality.Good
@@ -1296,10 +1296,10 @@ private fun SourceCoverageSection(summary: DailySyncSummary?) {
             )
         }
         SourceTile(
-            title = "Cialo",
+            title = "Dodatkowe",
             value = summary?.bodyDays?.toDayLabel() ?: "brak danych",
             detail = if ((summary?.bodyDays ?: 0) > 0) {
-                "masa i parametry ciala sa zapisane"
+                "waga, VO2 lub SpO2 jesli zrodlo je poda"
             } else {
                 "waga i sklad ciala wejda z importu lub recznie"
             },
@@ -1353,7 +1353,7 @@ private fun DataMeaningCard(summary: DailySyncSummary?) {
         if ((summary?.heartDays ?: 0) == 0) add("puls")
         if ((summary?.sleepDays ?: 0) == 0) add("sen")
         if ((summary?.workoutDays ?: 0) == 0) add("treningi")
-        if ((summary?.bodyDays ?: 0) == 0) add("cialo")
+        if ((summary?.bodyDays ?: 0) == 0) add("waga/VO2/SpO2")
     }
 
     AnalysisCard(
@@ -1543,7 +1543,7 @@ private fun CoverageCard(
             CompactMetricRow(label = "Puls", value = "$heartDays / 30 dni", quality = heartDays.qualityForCount())
             CompactMetricRow(label = "Sen", value = "$sleepDays / 30 dni", quality = sleepDays.qualityForCount())
             CompactMetricRow(label = "Trening", value = "$workoutDays / 30 dni", quality = workoutDays.qualityForCount())
-            CompactMetricRow(label = "Cialo", value = "$bodyDays / 30 dni", quality = bodyDays.qualityForCount())
+            CompactMetricRow(label = "Dodatkowe", value = "$bodyDays / 30 dni", quality = bodyDays.qualityForCount())
         }
     }
 }
@@ -1682,7 +1682,7 @@ private fun DailySyncSection(summary: DailySyncSummary?) {
             quality = summary.workoutDays.qualityForCount(),
         )
         InfoRow(
-            label = "Dni ciala",
+            label = "Dni dodatkowe",
             value = summary.bodyDays.toString(),
             quality = summary.bodyDays.qualityForCount(),
         )
