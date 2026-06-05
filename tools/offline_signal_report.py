@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
+from analysis_rules import CREDIBLE_WALKING_FILTER_SQL
+
 
 DEFAULT_DB = Path("build/phone-db-check/vitrace-after-am-start.db")
 DEFAULT_STEPS_PER_KM = 1250
@@ -219,7 +221,7 @@ def sleep_section(con: sqlite3.Connection, cutoff_date: str) -> list[str]:
 def sleep_activity_section(con: sqlite3.Connection, cutoff_date: str) -> list[str]:
     rows = list(
         con.execute(
-            """
+            f"""
             SELECT
                 a.steps AS steps,
                 s.totalSleepMinutes AS totalSleepMinutes,
@@ -260,7 +262,7 @@ def sleep_activity_section(con: sqlite3.Connection, cutoff_date: str) -> list[st
 def sleep_debt_section(con: sqlite3.Connection, cutoff_date: str) -> list[str]:
     rows = list(
         con.execute(
-            """
+            f"""
             SELECT
                 date,
                 totalSleepMinutes,
@@ -310,7 +312,7 @@ def sleep_debt_section(con: sqlite3.Connection, cutoff_date: str) -> list[str]:
 def walking_section(con: sqlite3.Connection, cutoff_date: str) -> list[str]:
     rows = list(
         con.execute(
-            """
+            f"""
             SELECT
                 CASE
                     WHEN distanceMeters < 3000 THEN '<3 km'
@@ -326,7 +328,7 @@ def walking_section(con: sqlite3.Connection, cutoff_date: str) -> list[str]:
                 avg(activeCaloriesKcal / NULLIF(distanceMeters / 1000.0, 0)) AS kcalKm,
                 avg(vo2Max) AS vo2
             FROM workout_sessions
-            WHERE date < ? AND workoutType = 'walking' AND distanceMeters > 0
+            WHERE date < ? AND {CREDIBLE_WALKING_FILTER_SQL}
             GROUP BY band
             ORDER BY min(distanceMeters)
             """,
@@ -335,6 +337,8 @@ def walking_section(con: sqlite3.Connection, cutoff_date: str) -> list[str]:
     )
     lines = [
         "## Walking Workout Baselines",
+        "",
+        "Filtered to credible walking sessions: distance >=1 km, duration 10 min - 6 h, pace 8-40 min/km.",
         "",
         "| Distance band | Sessions | Km | Avg HR | Pace | kcal/km | VO2 |",
         "|---|---:|---:|---:|---:|---:|---:|",

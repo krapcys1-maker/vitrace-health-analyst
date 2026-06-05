@@ -9,6 +9,14 @@ import sqlite3
 import sys
 from pathlib import Path
 
+from analysis_rules import (
+    CREDIBLE_WALKING_FILTER_SQL,
+    FITNESS_WALKING_FILTER_SQL,
+    ActivityMonth,
+    ActivityMonthSignal,
+    classify_activity_months,
+)
+
 
 DEFAULT_DB = Path("build/phone-db-check/phone-current-vitrace.db")
 DEFAULT_OUTPUT = Path("build/body-intelligence-report.md")
@@ -205,6 +213,16 @@ def coverage_section(coverage: dict[str, object]) -> list[str]:
 def activity_section(years: list[sqlite3.Row], months_by_steps: list[sqlite3.Row], steps_per_km: int) -> list[str]:
     complete_months = sorted([row for row in months_by_steps if row["days"] >= 25], key=lambda row: row["avg_steps"], reverse=True)
     last18 = sorted(months_by_steps, key=lambda row: row["period"])[-18:]
+    month_signals = classify_activity_months(
+        [
+            ActivityMonth(
+                period=row["period"],
+                days=int(row["days"] or 0),
+                steps=int(row["steps"] or 0),
+            )
+            for row in sorted(months_by_steps, key=lambda item: item["period"])
+        ]
+    )
     lines = [
         "## Aktywnosc: nie tylko ile krokow, ale kiedy zmienil sie poziom",
         "",
@@ -233,7 +251,7 @@ def activity_section(years: list[sqlite3.Row], months_by_steps: list[sqlite3.Row
         "|---|---:|---:|---|",
     ])
     for row in last18:
-        label = activity_month_label(row)
+        label = activity_month_label(row, month_signals.get(row["period"]))
         lines.append(f"| {row['period']} | {fmt_int(row['steps'])} | {fmt_int(row['avg_steps'])} | {label} |")
     lines.extend(["",])
     return lines
@@ -476,7 +494,7 @@ def activity_by_month(con: sqlite3.Connection, cutoff_date: str) -> list[sqlite3
 
 def credible_walking_by_year(con: sqlite3.Connection, cutoff_date: str) -> list[sqlite3.Row]:
     return list(con.execute(
-        """
+        f"""
         select substr(date, 1, 4) as period, count(*) as sessions,
                sum(distanceMeters) / 1000.0 as km,
                avg(distanceMeters) / 1000.0 as avg_km,
@@ -486,10 +504,7 @@ def credible_walking_by_year(con: sqlite3.Connection, cutoff_date: str) -> list[
                avg(vo2Max) as vo2
         from workout_sessions
         where date < ?
-          and workoutType = 'walking'
-          and distanceMeters >= 1000
-          and durationSeconds between 600 and 21600
-          and avgPaceSecondsPerKm between 480 and 2400
+          and {CREDIBLE_WALKING_FILTER_SQL}
         group by period
         order by period
         """,
@@ -499,7 +514,7 @@ def credible_walking_by_year(con: sqlite3.Connection, cutoff_date: str) -> list[
 
 def fitness_walking_by_year(con: sqlite3.Connection, cutoff_date: str) -> list[sqlite3.Row]:
     return list(con.execute(
-        """
+        f"""
         select substr(date, 1, 4) as period, count(*) as sessions,
                sum(distanceMeters) / 1000.0 as km,
                avg(distanceMeters) / 1000.0 as avg_km,
@@ -509,10 +524,7 @@ def fitness_walking_by_year(con: sqlite3.Connection, cutoff_date: str) -> list[s
                avg(vo2Max) as vo2
         from workout_sessions
         where date < ?
-          and workoutType = 'walking'
-          and distanceMeters between 3000 and 15000
-          and durationSeconds between 600 and 14400
-          and avgPaceSecondsPerKm between 480 and 1500
+          and {FITNESS_WALKING_FILTER_SQL}
         group by period
         order by period
         """,
@@ -771,7 +783,23 @@ def pct_delta(current: float | None, previous: float | None) -> float | None:
     return (float(current) - float(previous)) / abs(float(previous)) * 100.0
 
 
-def activity_month_label(row: sqlite3.Row) -> str:
+def activity_month_label(row: sqlite3.Row, signal: ActivityMonthSignal | None = None) -> str:
+    if signal is not None:
+        if signal.label == "peak":
+            return f"peak vs baseline ({fmt_ratio(signal.ratio_to_baseline)})"
+        if signal.label == "slump":
+            return f"slump vs baseline ({fmt_ratio(signal.ratio_to_baseline)})"
+        if signal.label == "above_baseline":
+            return f"powyzej baseline ({fmt_ratio(signal.ratio_to_baseline)})"
+        if signal.label == "below_baseline":
+            return f"ponizej baseline ({fmt_ratio(signal.ratio_to_baseline)})"
+        if signal.label == "near_baseline":
+            return f"blisko baseline ({fmt_ratio(signal.ratio_to_baseline)})"
+        if signal.label == "partial":
+            return "miesiac niepelny"
+        if signal.label == "baseline":
+            return "budowanie baseline"
+
     avg_steps = float(row["avg_steps"] or 0)
     if avg_steps >= 15000:
         return "peak, bardzo wysoki poziom"
@@ -782,6 +810,10 @@ def activity_month_label(row: sqlite3.Row) -> str:
     if avg_steps >= 5000:
         return "niski/sredni poziom"
     return "slump, malo ruchu"
+
+
+def fmt_ratio(value: float | None) -> str:
+    return "brak" if value is None else f"{value:.2f}x"
 
 
 def correlation_row(label: str, row: dict[str, object]) -> str:
