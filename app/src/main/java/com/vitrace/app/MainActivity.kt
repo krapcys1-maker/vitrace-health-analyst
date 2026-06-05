@@ -10,10 +10,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -118,6 +120,7 @@ private fun HealthConnectScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .safeDrawingPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -147,6 +150,7 @@ private fun HealthConnectScreen() {
             )
             AppTab.Profile -> ProfileTab()
         }
+        Spacer(modifier = Modifier.height(96.dp))
     }
 }
 
@@ -277,6 +281,8 @@ private fun DataTab(
     onRefresh: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        SectionTitle("Dane")
+        DataConnectionCard(diagnostics = diagnostics)
         ActionSection(
             diagnostics = diagnostics,
             loading = loading,
@@ -286,10 +292,8 @@ private fun DataTab(
         diagnostics?.error?.let { error ->
             SyncNotice(error)
         }
-        StatusSection(diagnostics = diagnostics, loading = loading)
-        DailySyncSection(summary = diagnostics?.dailySyncSummary)
-        DataQualitySection(items = diagnostics?.dataQualityItems.orEmpty())
-        RowsSection(rows = diagnostics?.rows.orEmpty())
+        SourceCoverageSection(summary = diagnostics?.dailySyncSummary)
+        DataMeaningCard(summary = diagnostics?.dailySyncSummary)
     }
 }
 
@@ -356,6 +360,198 @@ private fun StatusSection(
             },
         )
     }
+}
+
+@Composable
+private fun DataConnectionCard(
+    diagnostics: HealthConnectDiagnostics?,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "Polaczenie",
+                style = MaterialTheme.typography.titleMedium,
+                color = Color(0xFF0F172A),
+                fontWeight = FontWeight.Bold,
+            )
+            CompactMetricRow(
+                label = "Health Connect",
+                value = when (diagnostics?.sdkStatus) {
+                    HealthConnectSdkStatus.Available -> "dostepny"
+                    HealthConnectSdkStatus.NotInstalled -> "wymaga instalacji"
+                    HealthConnectSdkStatus.NotSupported -> "brak wsparcia"
+                    HealthConnectSdkStatus.Unknown, null -> "sprawdzam"
+                },
+                quality = when (diagnostics?.sdkStatus) {
+                    HealthConnectSdkStatus.Available -> DiagnosticQuality.Good
+                    HealthConnectSdkStatus.NotInstalled,
+                    HealthConnectSdkStatus.NotSupported -> DiagnosticQuality.Warning
+                    else -> DiagnosticQuality.Neutral
+                },
+            )
+            CompactMetricRow(
+                label = "Zgody",
+                value = when {
+                    diagnostics == null -> "sprawdzam"
+                    !diagnostics.permissionsChecked -> "po odswiezeniu"
+                    diagnostics.hasAllPermissions -> "pelne"
+                    else -> "${diagnostics.grantedPermissionCount}/${diagnostics.requiredPermissionCount}"
+                },
+                quality = when {
+                    diagnostics?.permissionsChecked != true -> DiagnosticQuality.Neutral
+                    diagnostics.hasAllPermissions -> DiagnosticQuality.Good
+                    else -> DiagnosticQuality.Warning
+                },
+            )
+            CompactMetricRow(
+                label = "Lokalna baza",
+                value = diagnostics?.dailySyncSummary?.lastSyncedAt ?: "brak zapisu",
+                quality = if (diagnostics?.dailySyncSummary?.lastSyncedAt == null) {
+                    DiagnosticQuality.Warning
+                } else {
+                    DiagnosticQuality.Good
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun SourceCoverageSection(summary: DailySyncSummary?) {
+    SectionTitle("Co mamy w bazie")
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SourceTile(
+                title = "Aktywnosc",
+                value = summary?.activityDays?.toDayLabel() ?: "brak danych",
+                detail = if ((summary?.activityDays ?: 0) > 0) {
+                    "kroki i aktywne kcal sa widoczne"
+                } else {
+                    "czekamy na kroki z Health Connect"
+                },
+                quality = (summary?.activityDays ?: 0).qualityForCount(),
+                modifier = Modifier.weight(1f),
+            )
+            SourceTile(
+                title = "Serce",
+                value = summary?.heartDays?.toDayLabel() ?: "brak danych",
+                detail = if ((summary?.heartDays ?: 0) > 0) {
+                    "puls gotowy do trendow"
+                } else {
+                    "brak pulsu w lokalnej bazie"
+                },
+                quality = (summary?.heartDays ?: 0).qualityForCount(),
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SourceTile(
+                title = "Sen",
+                value = summary?.sleepDays?.toDayLabel() ?: "brak danych",
+                detail = if ((summary?.sleepDays ?: 0) > 0) {
+                    "regeneracja bedzie analizowana"
+                } else {
+                    "brak snu w lokalnej bazie"
+                },
+                quality = (summary?.sleepDays ?: 0).qualityForCount(),
+                modifier = Modifier.weight(1f),
+            )
+            SourceTile(
+                title = "Treningi",
+                value = summary?.workoutDays?.toDayLabel() ?: "brak danych",
+                detail = if ((summary?.workoutDays ?: 0) > 0) {
+                    "sesje beda laczone z pulsem"
+                } else {
+                    "brak treningow z Health Connect"
+                },
+                quality = (summary?.workoutDays ?: 0).qualityForCount(),
+                modifier = Modifier.weight(1f),
+            )
+        }
+        SourceTile(
+            title = "Cialo",
+            value = summary?.bodyDays?.toDayLabel() ?: "brak danych",
+            detail = if ((summary?.bodyDays ?: 0) > 0) {
+                "masa i parametry ciala sa zapisane"
+            } else {
+                "waga i sklad ciala wejda z importu lub recznie"
+            },
+            quality = (summary?.bodyDays ?: 0).qualityForCount(),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun SourceTile(
+    title: String,
+    value: String,
+    detail: String,
+    quality: DiagnosticQuality,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = Color(0xFF0F172A),
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleLarge,
+                color = quality.color(),
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = detail,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF64748B),
+            )
+        }
+    }
+}
+
+@Composable
+private fun DataMeaningCard(summary: DailySyncSummary?) {
+    val missing = buildList {
+        if ((summary?.heartDays ?: 0) == 0) add("puls")
+        if ((summary?.sleepDays ?: 0) == 0) add("sen")
+        if ((summary?.workoutDays ?: 0) == 0) add("treningi")
+        if ((summary?.bodyDays ?: 0) == 0) add("cialo")
+    }
+
+    AnalysisCard(
+        title = "Co to oznacza",
+        lines = if (missing.isEmpty()) {
+            listOf(
+                "mamy komplet glownych sygnalow do pierwszych porownan",
+                "kolejny krok to trend 7/30 dni i import historii",
+            )
+        } else {
+            listOf(
+                "dzisiejszy dashboard bazuje glownie na aktywnosci",
+                "bez: ${missing.joinToString()} nie liczymy pelnej regeneracji",
+                "import historii Mi Fitness uzupelni dlugi baseline",
+            )
+        },
+        quality = if (missing.isEmpty()) DiagnosticQuality.Good else DiagnosticQuality.Warning,
+    )
 }
 
 @Composable
@@ -824,6 +1020,14 @@ private fun Int.qualityForCount(): DiagnosticQuality {
 
 private fun Long.qualityForCount(): DiagnosticQuality {
     return if (this > 0L) DiagnosticQuality.Good else DiagnosticQuality.Warning
+}
+
+private fun Int.toDayLabel(): String {
+    return when (this) {
+        0 -> "brak dni"
+        1 -> "1 dzien"
+        else -> "$this dni"
+    }
 }
 
 private fun Double.qualityForPositive(): DiagnosticQuality {

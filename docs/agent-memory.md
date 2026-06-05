@@ -96,6 +96,7 @@ Local Mi Fitness export summary:
 | 2026-06-05 | `vitrace/mvp-foundation` | Redesigned the dashboard into readable cards and changed startup to load cached local data before manual Health Connect refresh. | `:app:assembleDebug` passed; APK installed with ADB; screenshot/UI dump verified on device. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Replaced raw Health Connect exception display with a compact sync notice and kept cached dashboard visible on sync failures. | `:app:assembleDebug` passed; APK installed with ADB; UI dump verified no raw error text on startup. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Added analytics product plan, first tabbed app structure, and separated deterministic analysis rules from the Compose screen. | `:app:assembleDebug` passed; APK installed with ADB; Start, Analysis, and Data tabs verified with screenshots. |
+| 2026-06-05 | `vitrace/mvp-foundation` | Fixed system bar clipping and redesigned the Data tab from technical Health Connect records into user-facing source coverage cards. | `:app:assembleDebug` passed; APK installed with ADB; bottom of Start, Analysis, and Data verified with screenshots. |
 
 ## Update Protocol
 
