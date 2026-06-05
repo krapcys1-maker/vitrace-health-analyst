@@ -140,6 +140,35 @@ class ActivitySleepThresholdResult:
     interpretation: str
 
 
+@dataclass(frozen=True)
+class ActivityWorkoutSleepGroup:
+    label: str
+    days: int
+    avg_steps: float | None
+    avg_walking_km: float | None
+    total_minutes: float | None
+    rem_minutes: float | None
+    deep_minutes: float | None
+    score: float | None
+
+
+@dataclass(frozen=True)
+class ActivityWorkoutSleepLoadResult:
+    typical_no_long_walk: ActivityWorkoutSleepGroup
+    high_no_long_walk: ActivityWorkoutSleepGroup
+    long_walk: ActivityWorkoutSleepGroup
+    confidence: str
+    high_no_long_total_minutes_delta: float | None
+    high_no_long_rem_minutes_delta: float | None
+    high_no_long_deep_minutes_delta: float | None
+    high_no_long_score_delta: float | None
+    long_walk_total_minutes_delta: float | None
+    long_walk_rem_minutes_delta: float | None
+    long_walk_deep_minutes_delta: float | None
+    long_walk_score_delta: float | None
+    interpretation: str
+
+
 def classify_activity_months(
     months: list[ActivityMonth],
     *,
@@ -510,6 +539,107 @@ def activity_sleep_threshold_interpretation(
     if low_total is not None and low_score is not None and low_total >= 15 and low_score >= 2:
         return "nizszy ruch wyglada lepiej niz typowy dzien, ale bez mocnego efektu wysokiego ruchu"
     return "brak wyraznej roznicy miedzy progami aktywnosci"
+
+
+def compare_activity_workout_sleep_load(
+    typical_no_long_walk: ActivityWorkoutSleepGroup,
+    high_no_long_walk: ActivityWorkoutSleepGroup,
+    long_walk: ActivityWorkoutSleepGroup,
+    *,
+    min_typical_days: int = 20,
+    min_high_days: int = 10,
+    min_long_walk_days: int = 8,
+) -> ActivityWorkoutSleepLoadResult:
+    high_deltas = workout_sleep_group_deltas(high_no_long_walk, typical_no_long_walk)
+    long_deltas = workout_sleep_group_deltas(long_walk, typical_no_long_walk)
+    confidence = activity_workout_sleep_confidence(
+        typical_no_long_walk,
+        high_no_long_walk,
+        long_walk,
+        min_typical_days=min_typical_days,
+        min_high_days=min_high_days,
+        min_long_walk_days=min_long_walk_days,
+    )
+    return ActivityWorkoutSleepLoadResult(
+        typical_no_long_walk=typical_no_long_walk,
+        high_no_long_walk=high_no_long_walk,
+        long_walk=long_walk,
+        confidence=confidence,
+        high_no_long_total_minutes_delta=high_deltas["total_minutes"],
+        high_no_long_rem_minutes_delta=high_deltas["rem_minutes"],
+        high_no_long_deep_minutes_delta=high_deltas["deep_minutes"],
+        high_no_long_score_delta=high_deltas["score"],
+        long_walk_total_minutes_delta=long_deltas["total_minutes"],
+        long_walk_rem_minutes_delta=long_deltas["rem_minutes"],
+        long_walk_deep_minutes_delta=long_deltas["deep_minutes"],
+        long_walk_score_delta=long_deltas["score"],
+        interpretation=activity_workout_sleep_interpretation(confidence, high_deltas, long_deltas),
+    )
+
+
+def workout_sleep_group_deltas(
+    group: ActivityWorkoutSleepGroup,
+    typical: ActivityWorkoutSleepGroup,
+) -> dict[str, float | None]:
+    return {
+        "total_minutes": numeric_delta(group.total_minutes, typical.total_minutes),
+        "rem_minutes": numeric_delta(group.rem_minutes, typical.rem_minutes),
+        "deep_minutes": numeric_delta(group.deep_minutes, typical.deep_minutes),
+        "score": numeric_delta(group.score, typical.score),
+    }
+
+
+def activity_workout_sleep_confidence(
+    typical_no_long_walk: ActivityWorkoutSleepGroup,
+    high_no_long_walk: ActivityWorkoutSleepGroup,
+    long_walk: ActivityWorkoutSleepGroup,
+    *,
+    min_typical_days: int,
+    min_high_days: int,
+    min_long_walk_days: int,
+) -> str:
+    if (
+        typical_no_long_walk.days < min_typical_days
+        or high_no_long_walk.days < min_high_days
+        or long_walk.days < min_long_walk_days
+    ):
+        return "Insufficient"
+    if typical_no_long_walk.days >= 80 and high_no_long_walk.days >= 30 and long_walk.days >= 25:
+        return "High"
+    if typical_no_long_walk.days >= 30 and high_no_long_walk.days >= 15 and long_walk.days >= 10:
+        return "Medium"
+    return "Low"
+
+
+def activity_workout_sleep_interpretation(
+    confidence: str,
+    high_deltas: dict[str, float | None],
+    long_deltas: dict[str, float | None],
+) -> str:
+    if confidence == "Insufficient":
+        return "za mala probka do rozdzielenia wysokich krokow od dlugich marszow"
+
+    high_rem = high_deltas["rem_minutes"]
+    high_score = high_deltas["score"]
+    long_total = long_deltas["total_minutes"]
+    long_score = long_deltas["score"]
+
+    high_cost = high_rem is not None and high_rem <= -10
+    high_score_cost = high_score is not None and high_score <= -2
+    long_cost = long_total is not None and long_total <= -20
+    long_score_cost = long_score is not None and long_score <= -3
+
+    if high_cost and long_cost:
+        return "wysokie kroki bez dlugiego marszu obnizaja REM, a dlugi marsz dodatkowo skraca sen"
+    if high_cost and long_score_cost:
+        return "wysokie kroki bez dlugiego marszu obnizaja REM, a dlugi marsz obniza score"
+    if long_cost and long_score_cost:
+        return "dlugi marsz wyglada jak wieksze obciazenie regeneracji niz same wysokie kroki"
+    if high_cost or high_score_cost:
+        return "same wysokie kroki wygladaja na koszt dla regeneracji, nawet bez dlugiego marszu"
+    if long_cost or long_score_cost:
+        return "dlugi marsz wyglada na osobny koszt regeneracyjny"
+    return "brak wyraznej roznicy po oddzieleniu dlugich marszow"
 
 
 def walking_band_year_from_row(row: object) -> WalkingBandYear:

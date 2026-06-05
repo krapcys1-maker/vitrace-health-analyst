@@ -6,9 +6,11 @@ from tools.analysis_rules import (
     ActivityMonth,
     ActivitySleepGroup,
     SleepWindow,
+    ActivityWorkoutSleepGroup,
     WalkingBandYear,
     classify_activity_months,
     compare_activity_sleep_thresholds,
+    compare_activity_workout_sleep_load,
     compare_sleep_window_to_baseline,
     compare_latest_walking_band_years,
     evaluate_walking_session,
@@ -194,6 +196,32 @@ class ActivitySleepThresholdTest(unittest.TestCase):
             ActivitySleepGroup("low", 3, 1000, 5000, 3500.0, 430.0, 75.0, 60.0, 73.0),
             ActivitySleepGroup("typical", 40, 5001, 12000, 8500.0, 420.0, 70.0, 58.0, 72.0),
             ActivitySleepGroup("high", 30, 12001, 25000, 17000.0, 385.0, 55.0, 62.0, 66.0),
+        )
+
+        self.assertEqual(result.confidence, "Insufficient")
+        self.assertIn("za mala probka", result.interpretation)
+
+
+class ActivityWorkoutSleepLoadTest(unittest.TestCase):
+    def test_distinguishes_high_steps_from_long_walk_recovery_cost(self) -> None:
+        result = compare_activity_workout_sleep_load(
+            ActivityWorkoutSleepGroup("typical", 60, 10_000.0, 1.2, 430.0, 80.0, 57.0, 73.0),
+            ActivityWorkoutSleepGroup("high", 22, 26_000.0, 0.6, 430.0, 63.0, 56.0, 70.0),
+            ActivityWorkoutSleepGroup("long", 13, 26_000.0, 17.4, 405.0, 72.0, 53.0, 68.0),
+        )
+
+        self.assertEqual(result.confidence, "Medium")
+        self.assertEqual(result.high_no_long_rem_minutes_delta, -17.0)
+        self.assertEqual(result.long_walk_total_minutes_delta, -25.0)
+        self.assertEqual(result.long_walk_score_delta, -5.0)
+        self.assertIn("obnizaja REM", result.interpretation)
+        self.assertIn("dlugi marsz", result.interpretation)
+
+    def test_marks_workout_sleep_load_insufficient(self) -> None:
+        result = compare_activity_workout_sleep_load(
+            ActivityWorkoutSleepGroup("typical", 60, 10_000.0, 1.2, 430.0, 80.0, 57.0, 73.0),
+            ActivityWorkoutSleepGroup("high", 5, 26_000.0, 0.6, 430.0, 63.0, 56.0, 70.0),
+            ActivityWorkoutSleepGroup("long", 3, 26_000.0, 17.4, 405.0, 72.0, 53.0, 68.0),
         )
 
         self.assertEqual(result.confidence, "Insufficient")

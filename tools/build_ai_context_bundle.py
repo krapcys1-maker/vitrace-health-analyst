@@ -13,6 +13,8 @@ from typing import Any
 from analysis_rules import (
     ActivitySleepGroup,
     ActivitySleepThresholdResult,
+    ActivityWorkoutSleepGroup,
+    ActivityWorkoutSleepLoadResult,
     CREDIBLE_DAILY_HEART_FILTER_SQL,
     CREDIBLE_WALKING_FILTER_SQL,
     FITNESS_WALKING_FILTER_SQL,
@@ -24,6 +26,7 @@ from analysis_rules import (
     WalkingBandTrend,
     classify_activity_months,
     compare_activity_sleep_thresholds,
+    compare_activity_workout_sleep_load,
     compare_sleep_window_to_baseline,
     compare_latest_walking_band_years,
 )
@@ -190,6 +193,7 @@ def deterministic_engine_facts(
         "walkingFitness": walking_fitness_facts(con, generated_for_date),
         "sleepBaseline": sleep_baseline_facts(con, generated_for_date),
         "activitySleepThresholds": activity_sleep_threshold_facts(con, generated_for_date),
+        "activityWorkoutSleepLoad": activity_workout_sleep_load_facts(con, generated_for_date),
         "sleepAfterLongWalks": sleep_after_long_walks_facts(con, generated_for_date),
         "heartLoad": heart_load_facts(con, generated_for_date),
     }
@@ -591,6 +595,127 @@ def activity_sleep_group_to_dict(group: ActivitySleepGroup) -> dict[str, Any]:
         "minSteps": group.min_steps,
         "maxSteps": group.max_steps,
         "avgSteps": group.avg_steps,
+        "totalSleepMinutes": group.total_minutes,
+        "remSleepMinutes": group.rem_minutes,
+        "deepSleepMinutes": group.deep_minutes,
+        "sleepScore": group.score,
+    }
+
+
+def activity_workout_sleep_load_facts(con: sqlite3.Connection, generated_for_date: str) -> dict[str, Any]:
+    try:
+        rows = list(
+            con.execute(
+                f"""
+                with walking_days as (
+                  select date as activityDate,
+                         sum(distanceMeters) / 1000.0 as walkingKm,
+                         count(*) as walkingSessions
+                  from workout_sessions
+                  where date < ? and {CREDIBLE_WALKING_FILTER_SQL}
+                  group by date
+                )
+                select a.steps as steps,
+                       coalesce(w.walkingKm, 0.0) as walkingKm,
+                       coalesce(w.walkingSessions, 0) as walkingSessions,
+                       s.totalSleepMinutes as totalSleepMinutes,
+                       s.remSleepMinutes as remSleepMinutes,
+                       s.deepSleepMinutes as deepSleepMinutes,
+                       s.sleepScore as sleepScore
+                from daily_activity_summaries a
+                join sleep_details s on date(a.date, '+1 day') = s.date
+                left join walking_days w on w.activityDate = a.date
+                where a.date < ? and s.date < ? and a.steps > 0 and s.totalSleepMinutes > 0
+                """,
+                (generated_for_date, generated_for_date, generated_for_date),
+            )
+        )
+    except sqlite3.OperationalError:
+        return {"available": False, "reason": "activity, workout, or sleep table unavailable"}
+
+    if len(rows) < 30:
+        return {
+            "available": False,
+            "reason": "too few activity/workout-to-next-sleep pairs",
+            "pairs": len(rows),
+        }
+
+    step_values = sorted(int(row["steps"]) for row in rows)
+    low_threshold = step_values[len(step_values) // 4]
+    high_threshold = step_values[(len(step_values) * 3) // 4]
+    typical_no_long_rows = [
+        row for row in rows
+        if low_threshold < int(row["steps"]) < high_threshold
+        and float(row["walkingKm"] or 0.0) < LONG_WALK_SLEEP_MIN_DISTANCE_KM
+    ]
+    high_no_long_rows = [
+        row for row in rows
+        if int(row["steps"]) >= high_threshold
+        and float(row["walkingKm"] or 0.0) < LONG_WALK_SLEEP_MIN_DISTANCE_KM
+    ]
+    long_walk_rows = [
+        row for row in rows
+        if float(row["walkingKm"] or 0.0) >= LONG_WALK_SLEEP_MIN_DISTANCE_KM
+    ]
+    result = compare_activity_workout_sleep_load(
+        activity_workout_sleep_group("typicalNoLongWalk", typical_no_long_rows),
+        activity_workout_sleep_group("highNoLongWalk", high_no_long_rows),
+        activity_workout_sleep_group("longWalk", long_walk_rows),
+    )
+    return {
+        "available": True,
+        "closedDayRule": f"uses activity, workout, and sleep dates before {generated_for_date}",
+        "direction": "previous-day step load / long walk -> next measured sleep",
+        "pairs": len(rows),
+        "longWalkThresholdKm": LONG_WALK_SLEEP_MIN_DISTANCE_KM,
+        "lowThresholdSteps": low_threshold,
+        "highThresholdSteps": high_threshold,
+        "result": activity_workout_sleep_load_to_dict(result),
+        "interpretationGuard": "observational comparison; long walk and high steps may include route, weather, stress, and schedule effects",
+    }
+
+
+def activity_workout_sleep_group(label: str, rows: list[sqlite3.Row]) -> ActivityWorkoutSleepGroup:
+    return ActivityWorkoutSleepGroup(
+        label=label,
+        days=len(rows),
+        avg_steps=rounded_average(rows, "steps"),
+        avg_walking_km=rounded_average(rows, "walkingKm"),
+        total_minutes=rounded_average(rows, "totalSleepMinutes"),
+        rem_minutes=rounded_average(rows, "remSleepMinutes"),
+        deep_minutes=rounded_average(rows, "deepSleepMinutes"),
+        score=rounded_average(rows, "sleepScore"),
+    )
+
+
+def activity_workout_sleep_load_to_dict(result: ActivityWorkoutSleepLoadResult) -> dict[str, Any]:
+    return {
+        "typicalNoLongWalk": activity_workout_sleep_group_to_dict(result.typical_no_long_walk),
+        "highNoLongWalk": activity_workout_sleep_group_to_dict(result.high_no_long_walk),
+        "longWalk": activity_workout_sleep_group_to_dict(result.long_walk),
+        "confidence": result.confidence,
+        "highNoLongWalkVsTypicalDeltas": {
+            "totalSleepMinutes": result.high_no_long_total_minutes_delta,
+            "remSleepMinutes": result.high_no_long_rem_minutes_delta,
+            "deepSleepMinutes": result.high_no_long_deep_minutes_delta,
+            "sleepScore": result.high_no_long_score_delta,
+        },
+        "longWalkVsTypicalDeltas": {
+            "totalSleepMinutes": result.long_walk_total_minutes_delta,
+            "remSleepMinutes": result.long_walk_rem_minutes_delta,
+            "deepSleepMinutes": result.long_walk_deep_minutes_delta,
+            "sleepScore": result.long_walk_score_delta,
+        },
+        "interpretation": result.interpretation,
+    }
+
+
+def activity_workout_sleep_group_to_dict(group: ActivityWorkoutSleepGroup) -> dict[str, Any]:
+    return {
+        "label": group.label,
+        "days": group.days,
+        "avgSteps": group.avg_steps,
+        "avgWalkingKm": group.avg_walking_km,
         "totalSleepMinutes": group.total_minutes,
         "remSleepMinutes": group.rem_minutes,
         "deepSleepMinutes": group.deep_minutes,

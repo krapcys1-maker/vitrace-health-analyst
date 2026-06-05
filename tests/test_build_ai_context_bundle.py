@@ -71,6 +71,9 @@ class BuildAiContextBundleCliTest(unittest.TestCase):
         activity_sleep = bundle["engineFacts"]["activitySleepThresholds"]
         self.assertFalse(activity_sleep["available"])
         self.assertEqual(activity_sleep["pairs"], 1)
+        workout_sleep = bundle["engineFacts"]["activityWorkoutSleepLoad"]
+        self.assertFalse(workout_sleep["available"])
+        self.assertEqual(workout_sleep["pairs"], 1)
         sleep_after_walks = bundle["engineFacts"]["sleepAfterLongWalks"]
         self.assertEqual(sleep_after_walks["thresholdKm"], 8.0)
         self.assertEqual(sleep_after_walks["longWalkSleep"]["days"], 1)

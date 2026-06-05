@@ -12,6 +12,8 @@ from pathlib import Path
 from analysis_rules import (
     ActivitySleepGroup,
     ActivitySleepThresholdResult,
+    ActivityWorkoutSleepGroup,
+    ActivityWorkoutSleepLoadResult,
     CREDIBLE_DAILY_HEART_FILTER_SQL,
     CREDIBLE_WALKING_FILTER_SQL,
     FITNESS_WALKING_FILTER_SQL,
@@ -24,6 +26,7 @@ from analysis_rules import (
     WalkingBandTrend,
     classify_activity_months,
     compare_activity_sleep_thresholds,
+    compare_activity_workout_sleep_load,
     compare_sleep_window_to_baseline,
     compare_latest_walking_band_years,
 )
@@ -69,6 +72,7 @@ def build_report(con: sqlite3.Connection, db_path: Path, cutoff_date: str) -> st
     intensity = exercise_intensity_summary(con, cutoff_date)
     sleep_activity = sleep_activity_tests(con, cutoff_date)
     activity_sleep_thresholds = activity_sleep_threshold_test(con, cutoff_date)
+    activity_workout_sleep_load = activity_workout_sleep_load_test(con, cutoff_date)
     long_walk_sleep = sleep_after_long_walks(con, cutoff_date)
     sleep_windows = sleep_debt_windows(con, cutoff_date)
     sleep_window_comparisons = compare_sleep_windows(sleep_windows)
@@ -87,12 +91,12 @@ def build_report(con: sqlite3.Connection, db_path: Path, cutoff_date: str) -> st
         "",
     ]
 
-    lines.extend(executive_findings(activity_years, activity_months, walking_years, fitness_walking_years, walking_band_trends, running, sleep_activity, activity_sleep_thresholds, long_walk_sleep, sleep_windows, sleep_window_comparisons, heart, steps_per_km))
+    lines.extend(executive_findings(activity_years, activity_months, walking_years, fitness_walking_years, walking_band_trends, running, sleep_activity, activity_sleep_thresholds, activity_workout_sleep_load, long_walk_sleep, sleep_windows, sleep_window_comparisons, heart, steps_per_km))
     lines.extend(coverage_section(coverage))
     lines.extend(activity_section(activity_years, activity_months, steps_per_km))
     lines.extend(walking_section(walking_years, fitness_walking_years, walking_band_trends, intensity))
     lines.extend(running_section(running))
-    lines.extend(sleep_section(sleep_months, sleep_windows, sleep_window_comparisons, sleep_activity, activity_sleep_thresholds, long_walk_sleep))
+    lines.extend(sleep_section(sleep_months, sleep_windows, sleep_window_comparisons, sleep_activity, activity_sleep_thresholds, activity_workout_sleep_load, long_walk_sleep))
     lines.extend(heart_section(heart))
     lines.extend(product_section())
     lines.extend(reference_section())
@@ -109,6 +113,7 @@ def executive_findings(
     running: dict[str, object],
     sleep_activity: dict[str, object],
     activity_sleep_thresholds: ActivitySleepThresholdResult | None,
+    activity_workout_sleep_load: ActivityWorkoutSleepLoadResult | None,
     long_walk_sleep: dict[str, object],
     sleep_windows: dict[str, object],
     sleep_window_comparisons: list[SleepWindowComparison],
@@ -207,6 +212,16 @@ def executive_findings(
             f"{signed_minutes(activity_sleep_thresholds.high_deep_minutes_delta)} i score "
             f"{fmt_signed_number(activity_sleep_thresholds.high_score_delta)}. "
             f"Wniosek: {activity_sleep_thresholds.interpretation}."
+        )
+
+    if activity_workout_sleep_load:
+        findings.append(
+            f"7b. Po oddzieleniu dlugich marszow widac dwie rzeczy: wysokie kroki bez marszu 8+ km daja REM "
+            f"{signed_minutes(activity_workout_sleep_load.high_no_long_rem_minutes_delta)} i score "
+            f"{fmt_signed_number(activity_workout_sleep_load.high_no_long_score_delta)} vs typowy dzien, "
+            f"a dni z marszem 8+ km daja sen {signed_minutes(activity_workout_sleep_load.long_walk_total_minutes_delta)} "
+            f"i score {fmt_signed_number(activity_workout_sleep_load.long_walk_score_delta)}. "
+            f"Wniosek: {activity_workout_sleep_load.interpretation}."
         )
 
     last30 = sleep_windows["last30"]
@@ -423,6 +438,7 @@ def sleep_section(
     window_comparisons: list[SleepWindowComparison],
     sleep_activity: dict[str, object],
     activity_sleep_thresholds: ActivitySleepThresholdResult | None,
+    activity_workout_sleep_load: ActivityWorkoutSleepLoadResult | None,
     long_walk_sleep: dict[str, object],
 ) -> list[str]:
     lines = [
@@ -493,6 +509,36 @@ def sleep_section(
     else:
         lines.extend([
             "Brak wystarczajacych par dni aktywnosc -> nastepny sen.",
+            "",
+        ])
+    lines.extend([
+        "Oddzielenie wysokich krokow od dlugiego marszu:",
+        "",
+    ])
+    if activity_workout_sleep_load:
+        lines.extend([
+            "| Grupa | Dni | Kroki | Marsz | Sen | REM | Gleboki | Score |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|",
+            activity_workout_sleep_group_row(activity_workout_sleep_load.typical_no_long_walk),
+            activity_workout_sleep_group_row(activity_workout_sleep_load.high_no_long_walk),
+            activity_workout_sleep_group_row(activity_workout_sleep_load.long_walk),
+            "",
+            f"Wysokie kroki bez dlugiego marszu vs typowy dzien: sen "
+            f"{signed_minutes(activity_workout_sleep_load.high_no_long_total_minutes_delta)}, "
+            f"REM {signed_minutes(activity_workout_sleep_load.high_no_long_rem_minutes_delta)}, "
+            f"gleboki {signed_minutes(activity_workout_sleep_load.high_no_long_deep_minutes_delta)}, "
+            f"score {fmt_signed_number(activity_workout_sleep_load.high_no_long_score_delta)}.",
+            f"Dlugi marsz vs typowy dzien: sen {signed_minutes(activity_workout_sleep_load.long_walk_total_minutes_delta)}, "
+            f"REM {signed_minutes(activity_workout_sleep_load.long_walk_rem_minutes_delta)}, "
+            f"gleboki {signed_minutes(activity_workout_sleep_load.long_walk_deep_minutes_delta)}, "
+            f"score {fmt_signed_number(activity_workout_sleep_load.long_walk_score_delta)}. "
+            f"Pewnosc: {confidence_pl(activity_workout_sleep_load.confidence)}. "
+            f"Wniosek: {activity_workout_sleep_load.interpretation}.",
+            "",
+        ])
+    else:
+        lines.extend([
+            "Brak wystarczajacej probki do oddzielenia wysokich krokow od dlugich marszow.",
             "",
         ])
     lines.extend([
@@ -881,6 +927,78 @@ def aggregate_activity_sleep_group(
     )
 
 
+def activity_workout_sleep_load_test(
+    con: sqlite3.Connection,
+    cutoff_date: str,
+) -> ActivityWorkoutSleepLoadResult | None:
+    rows = list(con.execute(
+        f"""
+        with walking_days as (
+          select date as activityDate,
+                 sum(distanceMeters) / 1000.0 as walkingKm,
+                 count(*) as walkingSessions
+          from workout_sessions
+          where date < ?
+            and {CREDIBLE_WALKING_FILTER_SQL}
+          group by date
+        )
+        select a.steps as steps,
+               coalesce(w.walkingKm, 0.0) as walkingKm,
+               coalesce(w.walkingSessions, 0) as walkingSessions,
+               s.totalSleepMinutes as total,
+               s.remSleepMinutes as rem,
+               s.deepSleepMinutes as deep,
+               s.sleepScore as score
+        from daily_activity_summaries a
+        join sleep_details s on date(a.date, '+1 day') = s.date
+        left join walking_days w on w.activityDate = a.date
+        where a.date < ? and s.date < ? and a.steps > 0 and s.totalSleepMinutes > 0
+        """,
+        (cutoff_date, cutoff_date, cutoff_date),
+    ))
+    if len(rows) < 30:
+        return None
+
+    step_values = sorted(int(row["steps"]) for row in rows)
+    low_threshold = step_values[len(step_values) // 4]
+    high_threshold = step_values[(len(step_values) * 3) // 4]
+    typical_no_long_rows = [
+        row for row in rows
+        if low_threshold < int(row["steps"]) < high_threshold
+        and float(row["walkingKm"] or 0.0) < LONG_WALK_SLEEP_MIN_DISTANCE_KM
+    ]
+    high_no_long_rows = [
+        row for row in rows
+        if int(row["steps"]) >= high_threshold
+        and float(row["walkingKm"] or 0.0) < LONG_WALK_SLEEP_MIN_DISTANCE_KM
+    ]
+    long_walk_rows = [
+        row for row in rows
+        if float(row["walkingKm"] or 0.0) >= LONG_WALK_SLEEP_MIN_DISTANCE_KM
+    ]
+    return compare_activity_workout_sleep_load(
+        aggregate_activity_workout_sleep_group("typowy bez dlugiego marszu", typical_no_long_rows),
+        aggregate_activity_workout_sleep_group("wysokie kroki bez dlugiego marszu", high_no_long_rows),
+        aggregate_activity_workout_sleep_group("dlugi marsz 8+ km", long_walk_rows),
+    )
+
+
+def aggregate_activity_workout_sleep_group(
+    label: str,
+    rows: list[sqlite3.Row],
+) -> ActivityWorkoutSleepGroup:
+    return ActivityWorkoutSleepGroup(
+        label=label,
+        days=len(rows),
+        avg_steps=average(rows, "steps"),
+        avg_walking_km=average(rows, "walkingKm"),
+        total_minutes=average(rows, "total"),
+        rem_minutes=average(rows, "rem"),
+        deep_minutes=average(rows, "deep"),
+        score=average(rows, "score"),
+    )
+
+
 def sleep_after_long_walks(con: sqlite3.Connection, cutoff_date: str) -> dict[str, object]:
     rows = list(con.execute(
         f"""
@@ -1111,6 +1229,14 @@ def activity_sleep_group_row(group: ActivitySleepGroup) -> str:
         f"| {group.label} | {group.days} | {step_range}; sr. {fmt_int(group.avg_steps)} | "
         f"{minutes_h(group.total_minutes)} | {fmt1(group.rem_minutes)} | "
         f"{fmt1(group.deep_minutes)} | {fmt1(group.score)} |"
+    )
+
+
+def activity_workout_sleep_group_row(group: ActivityWorkoutSleepGroup) -> str:
+    return (
+        f"| {group.label} | {group.days} | {fmt_int(group.avg_steps)} sr. | "
+        f"{fmt1(group.avg_walking_km)} km sr. | {minutes_h(group.total_minutes)} | "
+        f"{fmt1(group.rem_minutes)} | {fmt1(group.deep_minutes)} | {fmt1(group.score)} |"
     )
 
 

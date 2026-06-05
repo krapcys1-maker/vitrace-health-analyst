@@ -107,6 +107,7 @@ Outputs:
 - REM/deep/light as wearable estimates
 - activity-to-sleep and sleep-to-next-day tests
 - previous-day activity threshold test: low/typical/high personal step groups versus next measured sleep
+- high-step versus long-walk recovery split: separate high step days without 8+ km walks from actual long walking workouts
 - next-night sleep after long walks versus other measured nights
 
 AI role:
@@ -153,6 +154,7 @@ The bundle includes:
 - walking distance-band trends so AI compares similar walks instead of mixing short walks with long marches
 - sleep baseline facts so AI sees recent 7/14/30 measured nights against the user's own baseline before explaining recovery
 - activity-to-next-sleep threshold facts so AI can explain whether high activity days look helpful, harmful, mixed, or neutral for recovery
+- activity/workout sleep-load facts so AI separates high daily steps from long walking-session recovery cost
 - deterministic insights
 - confidence
 - limitations
