@@ -2,6 +2,8 @@
 
 This document describes what the app should calculate, what AI should explain, and how the screens should present it.
 
+Current priority is governed by `docs/analytics-product-plan.md`, `docs/analysis-engine-roadmap.md`, and `docs/insight-contract.md`. If this file mentions older tab names or future body-composition ideas, treat them as implementation notes, not active UI scope.
+
 ## Product Shape
 
 VitaTrace should be a personal organism analysis app:
@@ -27,7 +29,7 @@ Detailed local data
 Feature builders
   SleepFeatureBuilder
   SportFeatureBuilder
-  BodyCompositionFeatureBuilder
+  FutureBodyCompositionFeatureBuilder
   SourceCoverageBuilder
         |
         v
@@ -39,13 +41,13 @@ Deterministic analytics engine
   confidence and sample-size rules
         |
         v
-AiHealthSummary
+AI Context Bundle
         |
         v
 AI explanation layer
         |
         v
-UI: Analiza, Sen, Sport, Waga, Zdrowie
+UI: answer-first report modules and drill-downs
 ```
 
 AI does not calculate from raw rows. AI receives deterministic findings with sample size, date range, confidence, and missing-data flags.
@@ -98,7 +100,7 @@ Every insight should expose:
 
 ## Sleep Analytics
 
-The `Sen` tab should have focused sections:
+The sleep module should have focused drill-down sections:
 
 - `Miesiace`
 - `Fazy`
@@ -150,7 +152,7 @@ Norm references may be used only as context, not as diagnosis. For the user prof
 
 ## Sport Analytics
 
-The `Sport` tab must keep these separate:
+The sport module must keep these analytical sources separate:
 
 - `Kroki`: daily steps and estimated kilometers
 - `Chodzenie`: walking workouts only
@@ -225,9 +227,9 @@ Calorie efficiency should track:
 
 The engine must avoid claiming "you burn faster" unless it controls for workout type, distance, duration, and intensity well enough.
 
-## Body Composition And Weight Analytics
+## Future Body Composition And Weight Analytics
 
-The `Waga` tab must stay honest:
+There is no active body-composition module yet. When real data exists, this future module must stay honest:
 
 - current data has simple mass records only
 - future body composition may include fat, muscle, water, bone mass, visceral fat, BMR, protein, metabolic age
@@ -260,16 +262,16 @@ Smart-scale composition values must be treated as noisy trend data, not exact me
 
 AI has two surfaces:
 
-- `Analiza`: whole-body report and cross-domain explanation
-- `Zdrowie`: notes, lab result explanation, and medical-document context after review
+- whole-body report and cross-domain explanation
+- future health notes, lab result explanation, and medical-document context after review
 
-Domain tabs can have an `AI` section, but it should be scoped:
+Domain drill-downs can have scoped AI explanations later:
 
 - `Sen AI`: explain sleep trends and sleep-related correlations
 - `Sport AI`: explain performance, cardio efficiency, calorie efficiency, and recovery
-- `Waga AI`: explain weight/body composition trends after data exists
+- future body-composition AI: explain weight/body-composition trends only after data exists
 
-`Opcje` holds AI configuration:
+Options holds AI configuration:
 
 - provider status
 - DeepSeek API key status
@@ -279,7 +281,7 @@ Domain tabs can have an `AI` section, but it should be scoped:
 
 ## AI Input Contract
 
-`AiHealthSummary` should contain:
+`AI Context Bundle` should contain:
 
 - profile: sex, age, height, weight, stepsPerKm
 - source coverage: history versus live Health Connect
@@ -308,7 +310,7 @@ Each analytical screen should follow this hierarchy:
 4. Evidence: sample size, date range, confidence.
 5. Drill-down list: days or sessions used.
 
-Avoid one huge scroll of unrelated cards. Use tabs/segmented controls inside a domain.
+Avoid one huge scroll of unrelated cards. Use answer-first modules and focused drill-downs; do not use navigation structure as a substitute for analysis.
 
 Use visual language:
 
@@ -318,7 +320,7 @@ Use visual language:
 - scatter plot for correlations, for example steps versus deep sleep
 - session list for running/walking workouts
 - confidence badge: weak / medium / strong
-- source badge: Mi Fitness history / Health Connect live / manual
+- internal source badge only when the user asks for evidence/debug detail
 
 Visual direction:
 
@@ -357,7 +359,7 @@ First outputs:
   - pace and heart-rate trend for running/walking
   - kcal/km and kcal/min trend
 
-Only after this exists should the DeepSeek prompt receive an `AiHealthSummary`.
+Only after this exists should the DeepSeek prompt receive an `AI Context Bundle`.
 
 ## Additional High-Value Ideas
 
@@ -374,6 +376,6 @@ These are worth adding after the first deterministic context is stable:
 - calorie cost trend: whether kcal/km and kcal/min are rising or falling for similar sessions
 - consistency score: how stable sleep time, activity, and training load are week to week
 - anomaly days: days where sleep, heart rate, or training cost is far from personal baseline
-- source reliability score: whether a conclusion is mostly from rich historical Mi Fitness data or sparse Health Connect live data
-- future body composition links: fat/muscle/weight versus sleep phases, resting heart rate, workout heart rate, and calorie cost
+- internal source reliability score: whether a conclusion is based on rich history or sparse live data
+- future body composition links, only after real data exists: fat/muscle/weight versus sleep phases, resting heart rate, workout heart rate, and calorie cost
 - notes correlation: subjective bad/good days versus sleep, activity, heart rate, and training load

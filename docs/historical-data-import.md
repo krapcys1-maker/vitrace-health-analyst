@@ -25,7 +25,7 @@ These files must stay private unless a small fake/sanitized fixture is created e
 
 ## Target Import Shape
 
-Historical import must preserve rich source detail first, then generate daily summaries for fast dashboard screens.
+Historical import must preserve rich source detail first, then generate daily summaries for fast trend screens and audits.
 
 Detailed local tables should include:
 
@@ -43,7 +43,7 @@ Daily summary tables remain useful for quick screens:
 - `daily_workout_summaries`
 - `daily_body_summaries`
 
-This keeps dashboard, desktop sync, and future AI summaries independent from the original source format without throwing away analytical detail.
+This keeps product screens, desktop sync, deterministic reports, and future AI explanations independent from the original source format without throwing away analytical detail.
 
 ## Import Rules
 
@@ -52,7 +52,7 @@ This keeps dashboard, desktop sync, and future AI summaries independent from the
 - Import into a staging model first.
 - Validate date ranges, units, row counts, and duplicates before writing normalized summaries.
 - Keep source provenance: `MI_FITNESS_EXPORT`, file name, and import timestamp.
-- Prefer daily aggregates for dashboard speed only. AI and deterministic analytics must be built from detailed analytical tables and then summarized into an `AiHealthSummary`.
+- Prefer daily aggregates for speed only. AI and deterministic analytics must be built from detailed analytical tables and then summarized into an `AI Context Bundle`.
 - Do not discard rich fields just because the first UI does not show them.
 - Do not mix basal/total calories into activity calories. Map historical activity calories conservatively and mark uncertain fields.
 
@@ -153,4 +153,4 @@ Historical import should make these deterministic calculations possible before a
 - trend versus previous year/month
 - sleep/activity correlation candidates
 - cardio efficiency candidates from workouts, heart rate, pace, and VO2 max when available
-- body composition correlations when weight/body fat/muscle data exists
+- body composition correlations only when real weight/body fat/muscle history exists

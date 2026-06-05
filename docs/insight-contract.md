@@ -2,20 +2,22 @@
 
 Date: 2026-06-05
 
-This file is the working contract for the current product direction. It takes priority over older domain-tab plans when there is a conflict.
+This file is the working contract for the current product direction. It takes priority over older domain-tab and dashboard plans when there is a conflict.
 
 ## Product Shape Now
 
 VitaTrace is an answer-first personal health data analyst.
 
-The first screen is an insight feed, not a copy of Mi Fitness and not a generic dashboard. Each visible card must answer one useful question and show the evidence behind it.
+The first screen is an answer-first human report, not a copy of Mi Fitness and not a generic dashboard. Each visible card must answer one useful question and show the evidence behind it.
+
+Technical source coverage can exist internally, but it is not a main-screen product module.
 
 ## Required Insight Shape
 
 Every visible insight must contain:
 
 - `id`: stable machine-readable scope
-- `domain`: short user-facing area, for example `Sen`, `Trening`, `Dane`
+- `domain`: short user-facing area, for example `Aktywnosc`, `Sen`, `Trening`, `Puls`
 - `title`: one question
 - `answer`: direct conclusion in plain language
 - `evidence`: concrete metric rows used for the conclusion
@@ -24,9 +26,10 @@ Every visible insight must contain:
 - `confidence`: `High`, `Medium`, `Low`, or `Insufficient`
 - `limitations`: what this does not prove
 - `nextStep`: what would make the test stronger
-- source coverage and time context in `analysis_results`
+- source coverage and time context internally in `analysis_results`
 
 No card is allowed to show only raw record counts as the main point.
+No main-screen card should use sync/API/provider/source wording.
 
 ## Strong Signals In The Current Data
 
@@ -76,7 +79,6 @@ The deterministic engine calculates first. AI explains later.
 
 Allowed deterministic tests now:
 
-- data coverage reality
 - yearly/monthly steps and estimated kilometers
 - monthly sleep baseline with sleep stages
 - sleep debt window versus personal baseline
@@ -87,9 +89,12 @@ Allowed deterministic tests now:
 - high average heart-rate days with sleep/activity context
 - personal baseline and outlier days when coverage is enough
 
+Internal-only tests:
+
+- data coverage reality, used to gate claims and confidence, not as a visible user module
+
 Current `tested_insight` scopes:
 
-- `data_coverage_reality`
 - `long_term_steps_km`
 - `sleep_monthly_baseline`
 - `sleep_debt_window`
@@ -98,6 +103,10 @@ Current `tested_insight` scopes:
 - `training_day_sleep`
 - `heart_outlier_context`
 - `walking_efficiency_by_distance_band`
+
+Internal current scope:
+
+- `data_coverage_reality`
 
 Forbidden conclusions from current data:
 
@@ -127,10 +136,11 @@ Charts are allowed only when they help answer a question:
 - session list only as drill-down evidence
 
 No decorative chart without a sentence explaining what to look at.
+No technical diagnostics on the main screen.
 
 ## AI Rules
 
-AI may receive only aggregated deterministic insight objects, not raw private files.
+AI may receive only the `AI Context Bundle`, not raw private files.
 
 AI may explain:
 
@@ -138,6 +148,7 @@ AI may explain:
 - what is weak or not proven
 - what may be worth testing next
 - how the result relates to the user's profile
+- how to phrase the 3-5 most important findings for the main screen
 
 AI must not:
 
@@ -146,6 +157,7 @@ AI must not:
 - receive raw route data
 - receive unreviewed scans or OCR
 - invent unavailable data
+- expose sync/API/provider/source diagnostics to the user
 
 ## Offline Verification
 
@@ -155,6 +167,7 @@ When phone access is not available, use the latest pulled database copy and run:
 python -m py_compile tools\audit_insights.py
 python tools\audit_insights.py --db build\phone-db-check\vitrace-after-am-start.db
 python tools\offline_signal_report.py --db build\phone-db-check\vitrace-after-am-start.db --output build\offline-signal-report.md
+python tools\build_ai_context_bundle.py --db build\phone-db-check\vitrace-after-am-start.db --output build\ai-context-bundle.json --prompt-output build\ai-context-prompt.md
 .\gradlew.bat :app:assembleDebug
 ```
 

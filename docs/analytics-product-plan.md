@@ -1,366 +1,267 @@
 # VitaTrace Analytics Product Plan
 
-VitaTrace is not a Mi Fitness clone. Mi Fitness is useful as a data collector and device companion. VitaTrace should be the analysis layer above those data sources.
+Date: 2026-06-05
 
-## What Mi Fitness Already Does
+This is the current product plan. It replaces older dashboard/tab plans.
 
-- Shows current health tiles.
-- Shows workouts and route details.
-- Shows device-specific metrics.
-- Holds historical export data.
-- Syncs some data into Health Connect.
+## Product Definition
 
-VitaTrace can display similar raw metrics when needed, but raw metric display is not the main value.
+VitaTrace is a personal body intelligence app.
 
-## VitaTrace Differentiators
+It is not:
 
-VitaTrace should answer questions Mi Fitness does not answer well:
+- a Mi Fitness clone
+- a Health Connect dashboard
+- a sync/status/debug panel
+- a generic chart collection
+- a medical diagnosis tool
 
-- Is my activity trend improving, flat, or declining?
-- Which data streams are reliable enough to analyze?
-- Are sleep, activity, heart, and body metrics moving together?
-- Did training load change before fatigue or poor sleep?
-- Are values missing because I did not do something, or because the source did not sync?
-- What changed compared with my own baseline, not a generic target?
-- Which conclusions are deterministic, and which are uncertain because data quality is weak?
-- How many steps and estimated kilometers did I do by year, month, week, and day?
-- Does my activity, sleep, weight, body composition, and heart response move together in my own data?
+It should answer:
 
-## Main App Areas
+- what changed in the user's body/activity patterns
+- what is improving
+- what looks worse or suspicious
+- what is not supported by data
+- what should be tested next
 
-Dashboard:
+## Non-Negotiable UI Rule
 
-- Today overview.
-- 7-day and 30-day summary.
-- Data coverage status.
-- Short, readable cards.
+The main app must not show technical plumbing:
 
-Analysis:
+- no sync/API/provider wording
+- no SDK/permission/quota language
+- no raw record-count panels
+- no "records found" style copy
+- no source names as product content
 
-- Trend direction.
-- Baseline comparison.
-- Data sufficiency warnings.
-- Correlation candidates, such as sleep versus activity.
-- Actionable observations that are deterministic, not AI guesses.
-- Long-term activity totals by year, month, week, and day.
-- Personal Body Intelligence: relationships between activity, sleep, heart, training, weight, and body composition.
+Technical status may exist only in a later hidden Options/Debug area.
 
-Data:
+## Current Data Value
 
-- Health Connect status.
-- Local database sync state.
-- Source coverage.
-- Import status.
-- Data quality diagnostics.
+Strong signals:
 
-Profile:
+- daily steps and long-term activity history
+- estimated kilometers using `stepsPerKm = 1250`
+- walking workouts, after filtering impossible duration/pace/HR records
+- yearly and monthly activity changes
 
-- User profile basics.
-- Consent and privacy state.
-- Future AI settings.
-- App version and export/import controls.
+Medium signals:
 
-## Analysis Rules
+- sleep duration, sleep score, REM/deep/light/awake as wearable trends
+- high daily average HR context paired with sleep and activity
+- VO2 inside comparable walking/running sessions
+- active calories as support only
 
-- Do not analyze a metric until data coverage is known.
-- Do not treat missing records as missing behavior.
-- Keep local normalized daily tables as the source for dashboard and analysis.
-- Health Connect and Mi Fitness export are input sources only.
-- Prefer user baseline over generic health norms.
-- Use deterministic calculations first. AI summaries come later and only from aggregates.
-- Every correlation insight needs sample size, date range, confidence, and data reliability.
-- Do not show correlation claims from tiny samples.
-- Treat body composition from consumer scales as noisy trend data, not exact medical measurement.
+Weak or blocked signals:
 
-## Long-Term Activity Analytics
+- running trend, because there are too few sessions
+- body composition, because there is no real history
+- lab scans, because OCR/review/import is not built
+- SpO2 conclusions, because coverage is too thin
+- metabolism claims from calories
+- medical diagnosis
 
-VitaTrace must calculate step totals and estimated distance across long personal history:
+## Product Modules
 
-- total steps per year, month, week, and day
-- average daily steps per year and month
-- best year, month, and week by steps
-- trend versus previous year and previous month
-- estimated kilometers for each period
+### 1. Activity Over Time
 
-Distance estimation must use a user setting:
+Question:
 
-- `stepsPerKm`, default `1250`
-- `estimatedKm = totalSteps / stepsPerKm`
+> Czy moj poziom ruchu rosnie, spada czy jest nierowny?
 
-This setting is required because stride length changes by person and by activity type. The first version can use one global value; later versions can split walking and running if the data is reliable.
+Engine outputs:
 
-Examples the app should answer:
+- yearly steps
+- yearly estimated km
+- source km when present
+- monthly steps and estimated km
+- best/worst months
+- peak/slump versus previous 6 months
+- current-year projection from closed days
 
-- 2024: X steps, Y estimated km
-- 2025: X steps, Y estimated km
-- January 2025: X steps, Y estimated km
-- Best month ever: X steps, Y estimated km
+Current finding:
 
-## Personal Body Intelligence
+- 2025 was +14.0% steps versus 2024.
+- 2026 is uneven, not clearly worse.
+- April 2026 is a major peak month.
 
-This module is the main product direction: help the user understand their own body from long-term data.
+UI should show:
 
-Questions VitaTrace should answer over time:
+- one plain-language finding
+- a yearly/monthly trend view
+- peak/slump labels
+- details only on demand
 
-- Is my fitness improving, stable, or declining?
-- Does physical activity improve my sleep?
-- Does more walking reduce resting heart rate over weeks or months?
-- Does poor sleep increase next-day heart rate, stress, or lower activity?
-- Do I recover better after active days or rest days?
-- Does weight change affect heart rate during walking or running?
-- Does body fat change correlate with cardio efficiency?
-- Does muscle mass correlate with better activity tolerance?
-- Do I perform worse when weight is higher?
+### 2. Walking Fitness
 
-The app should present these as personal patterns with confidence, not universal health claims.
+Question:
 
-## Sleep And Activity Correlations
+> Czy chodze szybciej, na nizszym tetnie, albo taniej energetycznie przy podobnym dystansie?
 
-When history exists, calculate relationships between:
+Engine outputs:
 
-- daily steps and sleep duration
-- training days and sleep duration
-- training intensity and sleep duration
-- evening activity and sleep, if timestamps allow it
-- sleep duration and next-day steps
-- sleep duration and next-day resting heart rate
-- sleep duration and next-day stress
+- credible walking-session filters
+- comparable distance bands: 3-6 km, 6-10 km, 10-15 km, 15+ km
+- pace
+- average HR
+- kcal/km
+- VO2 when present
+- intensity bucket from average session HR
 
-Candidate metrics:
+Current finding:
 
-- Sleep Impact Score
-- Activity-to-Sleep Correlation
-- Sleep-to-Next-Day-Performance Correlation
+- Filtered 3-15 km walking pace improved from 14:43/km in 2024 to 13:00/km in 2025 and 12:38/km in 2026.
+- kcal/km dropped from 68.3 to 59.9 by 2026.
+- This is currently the best fitness signal in the dataset.
 
-Example insights:
+UI should show:
 
-- On days above 10,000 steps, sleep duration is on average X minutes different.
-- After nights below 6 hours, next-day steps change by X%.
-- Resting heart rate is usually X bpm different after short sleep.
+- "wydolnosc chodzenia" as a clear human module
+- comparable sessions only
+- confidence and limitations
+- no random workout totals as the main point
 
-Only show these when data coverage and sample size are sufficient.
+### 3. Sleep And Recovery
 
-Sleep screens should include monthly averages for total sleep, REM, deep sleep, light sleep, awake time, sleep score, bedtime/wake-time regularity, sample size, and source coverage. Sleep analysis should compare high-activity days versus lower-activity days and report percent/minute differences for REM, deep sleep, light sleep, total sleep, and sleep score with confidence.
+Question:
 
-## Body Composition Analytics
+> Czy sen jest ponizej mojej normy i co moze go ruszac?
 
-Future body inputs should support:
+Engine outputs:
 
-- weight
-- BMI
-- body fat percentage
-- muscle mass
-- body water percentage
-- bone mass
-- visceral fat
-- basal metabolic rate
-- protein percentage
-- metabolic age, if available
+- personal sleep baseline
+- last 7/14/30 measured-night windows
+- total sleep first
+- REM/deep/light/awake as wearable estimates
+- same-day activity vs sleep
+- previous-day activity vs sleep
+- sleep vs next-day activity/heart
 
-Possible sources:
+Current finding:
 
-- CSV export
-- Xiaomi/Mi Fitness export if available
-- Health Connect if available
-- manual entry
-- future photo/scan import after user review
+- Last 30 measured nights are about 7.26 h, around +7 min versus baseline.
+- More steps do not clearly improve same-night sleep in current data.
+- Previous-day high steps may be linked with lower score/REM, but this is only a hypothesis.
 
-When body composition exists, analyze:
+UI should show:
 
-- weight versus resting heart rate
-- weight versus heart rate during walking
-- weight versus heart rate during running
-- body fat percentage versus cardio efficiency
-- muscle mass versus activity tolerance
-- water percentage versus noisy body fat measurements
-- weight trend versus sleep duration/quality
-- fat loss trend versus activity volume
+- whether sleep is below/near/above personal baseline
+- activity-sleep relationship only if sample/confidence is enough
+- sleep stages clearly marked as estimates
 
-Use rolling averages and confidence scores. Never treat smart scale composition values as exact.
+### 4. Heart Load
 
-## Cardio Efficiency
+Question:
 
-Add a Cardio Efficiency Index.
+> Czy dni z wysokim tetnem wygladaja jak obciazenie albo slaba regeneracja?
 
-For walking, compare heart rate at similar step rate, speed, distance, or duration when available.
+Engine outputs:
 
-For running, compare:
+- high average-HR days versus baseline
+- paired sleep, steps, and workout context
+- exercise HR in comparable workout contexts
 
-- pace/speed
-- distance
-- duration
-- average heart rate
-- max heart rate
-- VO2 max if available
+Current finding:
 
-VitaTrace should detect:
+- High average-HR days show shorter sleep in available paired data.
+- This is not resting HR and not a diagnosis.
 
-- same pace with lower heart rate
-- same pace with higher heart rate
-- longer distance at similar heart rate
-- possible fatigue when heart rate is higher at normal effort
+UI should show:
 
-VO2 max may appear in Mi Fitness history even if Health Connect does not currently expose it. Historical import must therefore preserve VO2 max when present in export files.
+- load/recovery context
+- clear limitation that daily average HR is not resting HR
+- no medical claims
 
-Sport screens should show trends by month/week for steps, estimated kilometers, walking workouts, running workouts, pace, heart rate, cadence, VO2 max, active calories, calories per kilometer, and calories per minute. AI may explain what a run or month likely means for the user's body profile only after the deterministic engine calculates the comparison, sample size, and confidence.
+## AI Placement
 
-## Correlation Confidence Rules
+AI is not the calculator.
 
-- Less than 14 comparable days: do not show correlation insight.
-- 14-30 comparable days: low confidence.
-- 30-90 comparable days: medium confidence.
-- 90+ comparable days: higher confidence.
-- Missing sleep, heart, workout, or body composition data lowers confidence.
-- Every insight must include the sample size and date range in the internal analytics summary.
-
-## AI Role
-
-AI must not calculate directly from raw records.
-
-Deterministic analytics engine calculates:
+Deterministic engine calculates:
 
 - totals
-- averages
-- rolling trends
+- trends
+- filters
 - baselines
 - correlations
-- confidence scores
-- anomalies
-
-AI receives a compact `AiHealthSummary` and writes:
-
-- plain-language explanation
-- possible interpretation
+- confidence
 - limitations
-- practical next steps
 
-The detailed screen and module architecture lives in `docs/personal-analytics-architecture.md`.
+AI receives only an `AI Context Bundle` from:
 
-Allowed language:
+```powershell
+python tools\build_ai_context_bundle.py --db build\phone-db-check\phone-current-vitrace.db --output build\ai-context-bundle.json --prompt-output build\ai-context-prompt.md
+```
 
-- This may suggest...
-- In your data, this pattern appears...
-- The relationship is weak/moderate/strong...
-- This is not a diagnosis.
+AI may:
 
-Forbidden language:
+- choose the 3-5 most important findings
+- explain them in plain Polish
+- say what is weak or not proven
+- suggest next tests
+- write app-ready text
 
-- This proves...
-- You have disease X.
-- Your health problem is...
+AI must not:
 
-## Future Dashboard Sections
+- calculate from raw CSV/JSON/GPX
+- receive routes, photos, scans, secrets, or raw payloads
+- invent unavailable data
+- diagnose
+- show technical source/provider details to the user
 
-Long-term Activity:
-
-- yearly steps and estimated km
-- monthly steps and estimated km
-- best month/year
-- trend versus previous period
-
-Sleep & Activity:
-
-- whether activity appears to improve sleep
-- whether sleep appears to improve next-day activity
-- activity thresholds that seem best for sleep
-
-Cardio Efficiency:
-
-- walking heart rate trend
-- running heart rate trend
-- VO2 max trend
-- resting heart rate trend
-
-Body Composition:
-
-- weight trend
-- fat trend
-- muscle trend
-- water trend
-- relation to cardio and sleep
-
-AI Body Report:
-
-- what improved
-- what worsened
-- what patterns were found
-- what data is weak or missing
-- what to test next
+AI output must be stored separately from deterministic `analysis_results`.
 
 ## Implementation Priority
 
-Milestone 1:
+### Milestone 1: Engine Truth
 
-- historical CSV import
-- raw/staging records that preserve the source JSON/payload, source file, timestamps, provenance, and parser version
-- detailed analytical records before UI summaries:
-  - sleep details with bedtime, wake time, REM, deep sleep, light sleep, awake duration, awake count, and sleep score when present
-  - workout sessions with start/end, type, duration, distance, active calories, total calories, average/min/max heart rate, pace, cadence, training effect, recovery time, VO2 max, and GPX reference when present
-  - daily activity records with canonical steps, distance, active calories, and estimated kilometers
-  - heart daily summaries and later sample-level or compressed heart series where useful
-- daily aggregates generated from detailed records, not treated as the only source
-- yearly/monthly step totals
-- estimated km using `stepsPerKm`
-- data quality/audit screen
-- only a minimal dashboard needed to verify import correctness
+- keep `tools/deep_health_report.py` as the offline truth-checker
+- keep `tools/build_ai_context_bundle.py` as the AI boundary
+- add tests for peak/slump detector
+- add tests for credible walking-session filters
+- add tests for AI bundle privacy
 
-Milestone 2:
+### Milestone 2: Better Metrics
 
-- importer tests and audits for detailed records:
-  - yearly/monthly/day step totals
-  - sleep stages and sleep score counts
-  - workout session counts and key metrics
-  - running/walking separation
-  - estimated kilometers
-- baseline engine and rolling 7/30/90-day trends
-- yearly/monthly comparisons
+- activity peak/slump detector
+- walking efficiency by distance band and month
+- sleep after long walks versus normal days
+- high-HR day context with sample-count filtering
+- HR intensity buckets only where HR is credible
 
-Milestone 3:
+### Milestone 3: Human Product Copy
 
-- sleep/activity correlation engine
-- next-day effect analysis
-- confidence scoring
+- rewrite app screen around the four modules
+- remove any remaining developer/debug copy from main UI
+- show one answer first, details second
+- use charts only when they answer a specific question
 
-Milestone 4:
+### Milestone 4: AI Explanation
 
-- cardio efficiency engine
-- walking/running heart-rate comparison
-- VO2 max trend
+- create AI output table
+- add bundle hash
+- add DeepSeek adapter
+- add explicit user action for generating analysis
+- show AI report only after deterministic results are ready
 
-Milestone 5:
+### Milestone 5: Future Data
 
-- AI weekly/monthly report from deterministic summaries
+Only after real data exists:
 
-Milestone 6:
+- body composition import
+- lab scan OCR/review/import
+- notes-to-health-context analysis
+- running trend after enough sessions
+- resting/night HR or HRV if available
 
-- Health Connect background/new-data sync
+## Verification Rules
 
-Milestone 7:
+Before calling a product change done:
 
-- body composition import and correlation analysis
+```powershell
+python tools\deep_health_report.py --db build\phone-db-check\phone-current-vitrace.db --output build\body-intelligence-report.md
+python tools\build_ai_context_bundle.py --db build\phone-db-check\phone-current-vitrace.db --output build\ai-context-bundle.json --prompt-output build\ai-context-prompt.md
+python -m unittest discover -s tests
+.\gradlew.bat :app:assembleDebug
+```
 
-Test targets:
-
-- yearly step totals
-- monthly step totals
-- estimated km calculation
-- correlation sample-size rules
-- missing-data confidence downgrade
-
-## Historical Data Role
-
-Historical Mi Fitness export is essential because it can provide years of baseline data. The importer should normalize it into the same daily tables used by Health Connect:
-
-- activity
-- heart
-- sleep
-- workouts
-- body metrics
-
-After import, the analysis layer should be able to compare:
-
-- today versus personal baseline
-- last 7 days versus prior 7 days
-- last 30 days versus prior 30 days
-- current training volume versus historical normal
-- gaps in Health Connect versus available historical export data
+Generated files in `build/` are private artifacts and must not be committed.

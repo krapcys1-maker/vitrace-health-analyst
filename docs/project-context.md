@@ -1,6 +1,6 @@
 # VitaTrace Project Context
 
-VitaTrace is a local-first Android health analytics app. It is not a Mi Fitness clone. Its job is to turn watch, Health Connect, body composition, and future document data into reliable personal trends.
+VitaTrace is a local-first Android health analytics app. It is not a Mi Fitness clone and not a Health Connect status panel. Its job is to turn watch exports, live phone data, future manual entries, and reviewed documents into reliable personal trends.
 
 ## Product Goal
 
@@ -9,10 +9,10 @@ Answer questions like:
 - Is fitness improving, stable, or regressing?
 - Is heart rate lower for similar walking/running effort over time?
 - Does sleep affect next-day activity?
-- Is Health Connect data complete?
 - What changed over the last 7, 30, and 90 days?
 - How many steps and estimated kilometers did I do by year, month, week, and day?
-- Does activity, sleep, heart rate, weight, and body composition reveal personal patterns?
+- Does activity, sleep, heart rate, and workout effort reveal personal patterns?
+- Which signals are strong enough to trust, and which must stay hidden until there is enough data?
 
 The app must not diagnose disease. It can say that a trend is unusual and worth checking, but it must not claim medical certainty.
 
@@ -28,15 +28,18 @@ Build first:
 - Raw event storage.
 - Normalized metric records.
 - Daily aggregates.
-- Basic dashboard.
-- Data Quality screen.
-- Health Connect probe/diagnostics.
+- Detailed analytical tables for sleep and workouts.
+- Deterministic insight engine.
+- Offline human report from the real database.
+- Privacy-safe AI Context Bundle.
+- Answer-first product screen only after the engine produces useful findings.
 
 Defer:
 
 - Full Health Connect sync until real records are available.
 - DeepSeek/AI report generation.
 - OCR for scale photos or lab scans.
+- Body-composition analysis until real body-composition history exists.
 - Backend, accounts, payments, social features.
 - Direct connection to Xiaomi watch or Xiaomi cloud.
 
@@ -48,15 +51,18 @@ Data flow:
 Mi Fitness CSV export
         |
         v
-CSV adapters -> raw events -> normalized metrics -> daily aggregates
-                                                     |
-Health Connect probe/sync later --------------------+
-                                                     |
-                                                     v
-                                            analytics engine
-                                                     |
-                                                     v
-                                       dashboard and reports
+CSV adapters -> raw events -> detailed tables -> daily aggregates
+                                  |                 |
+Health Connect sync later --------+-----------------+
+                                  |
+                                  v
+                         deterministic insight engine
+                                  |
+                                  v
+                           AI Context Bundle
+                                  |
+                                  v
+                         answer-first reports/UI
 ```
 
 The database is the source of truth. Raw payloads stay local and allow importer fixes later.
@@ -92,7 +98,7 @@ Activity:
 - yearly/monthly/weekly/daily step totals
 - best year/month/week and trend versus previous period
 
-The Android dashboard must read these from VitaTrace local daily summary tables, not directly from Health Connect. Health Connect and historical imports are input sources; the local normalized database is the dashboard source. App launch should show cached local dashboard data first; explicit refresh can run the heavier Health Connect sync.
+Visible product surfaces must read these from VitaTrace local analytical tables and summaries, not directly from Health Connect. Health Connect and historical imports are input sources; the local normalized database is the source of truth.
 
 Cardio:
 
@@ -111,7 +117,7 @@ Recovery:
 - stress
 - readiness/recovery trend
 
-Body composition:
+Future body composition:
 
 - weight
 - BMI
@@ -123,6 +129,8 @@ Body composition:
 - basal metabolic rate if available
 - relationship to sleep, heart rate, training tolerance, and cardio efficiency
 
+This is future scope only. Do not build visible modules, claims, or AI conclusions around body composition until real records exist.
+
 Future labs/documents:
 
 - store source document metadata
@@ -132,7 +140,7 @@ Future labs/documents:
 
 ## AI Rules
 
-DeepSeek or any AI provider may receive only an `AiHealthSummary` made from:
+DeepSeek or any AI provider may receive only an `AI Context Bundle` made from:
 
 - user-approved profile basics
 - aggregates
