@@ -11,6 +11,7 @@ New coding sessions should start with:
 1. `AGENTS.md`
 2. `docs/agent-memory.md`
 3. `docs/project-context.md`
+4. `docs/health-connect-live-data.md`
 
 These files are the project brain: current state, decisions, privacy rules, test expectations, and next steps.
 

@@ -55,6 +55,7 @@ Local Mi Fitness export summary:
 - Private historical docs: `dokumentacja/`
 - Public agent instructions: `AGENTS.md`
 - Public clean project context: `docs/project-context.md`
+- Public Health Connect checklist: `docs/health-connect-live-data.md`
 - Public living memory: `docs/agent-memory.md`
 
 ## Next Recommended Steps
@@ -72,6 +73,7 @@ Local Mi Fitness export summary:
 |---|---|---|---|
 | 2026-06-05 | `vitrace/mvp-foundation` | Created repo, branch, starter README, gitignore, env example. | Not applicable; no app code yet. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Added agent guide, memory file, and clean project context. | Not applicable; documentation only. |
+| 2026-06-05 | `vitrace/mvp-foundation` | Added Health Connect live data checklist and implementation order. | Not applicable; documentation only. |
 
 ## Update Protocol
 
@@ -84,4 +86,3 @@ When you finish a session, append or update:
 - Any new decision or assumption.
 
 Keep this file short enough to read quickly. Move long details into separate docs and link them here.
-
