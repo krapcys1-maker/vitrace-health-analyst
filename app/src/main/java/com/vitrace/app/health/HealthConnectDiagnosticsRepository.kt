@@ -2,7 +2,6 @@ package com.vitrace.app.health
 
 import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
-import androidx.health.connect.client.aggregate.AggregateRequest
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.ExerciseSessionRecord
@@ -12,7 +11,7 @@ import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.records.WeightRecord
-import androidx.health.connect.client.records.metadata.DataOrigin
+import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import java.time.Duration
@@ -191,4 +190,3 @@ object HealthConnectDiagnosticsRepository {
 
     private fun Double.format1(): String = "%,.1f".format(this)
 }
-

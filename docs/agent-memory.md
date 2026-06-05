@@ -77,7 +77,8 @@ Local Mi Fitness export summary:
 | 2026-06-05 | `vitrace/mvp-foundation` | Created repo, branch, starter README, gitignore, env example. | Not applicable; no app code yet. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Added agent guide, memory file, and clean project context. | Not applicable; documentation only. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Added Health Connect live data checklist and implementation order. | Not applicable; documentation only. |
-| 2026-06-05 | `vitrace/mvp-foundation` | Started Android Compose project and Health Connect diagnostics screen. | `gradlew.bat tasks` passed; `:app:assembleDebug` blocked by missing Android SDK path. |
+| 2026-06-05 | `vitrace/mvp-foundation` | Started Android Compose project and Health Connect diagnostics screen. | `gradlew.bat tasks` passed; `:app:assembleDebug` later passed after installing Android SDK tools. |
+| 2026-06-05 | `vitrace/mvp-foundation` | Installed Android command-line tools, SDK Platform 36, Build-Tools, Platform-Tools/ADB; built debug APK. | APK generated at `app/build/outputs/apk/debug/app-debug.apk`. |
 
 ## Update Protocol
 
