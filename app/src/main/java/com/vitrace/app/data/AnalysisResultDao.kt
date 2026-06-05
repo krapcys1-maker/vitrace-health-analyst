@@ -24,6 +24,30 @@ interface AnalysisResultDao {
 
     @Query(
         """
+        DELETE FROM analysis_results
+        WHERE analysisType = :analysisType
+          AND scope = :scope
+          AND isCurrent = 0
+          AND pinned = 0
+          AND id NOT IN (
+              SELECT id FROM analysis_results
+              WHERE analysisType = :analysisType
+                AND scope = :scope
+                AND isCurrent = 0
+                AND pinned = 0
+              ORDER BY updatedAtEpochMs DESC
+              LIMIT :keepCount
+          )
+        """
+    )
+    suspend fun deleteOldSupersededCurrentSnapshots(
+        analysisType: String,
+        scope: String,
+        keepCount: Int,
+    )
+
+    @Query(
+        """
         SELECT * FROM analysis_results
         WHERE analysisType = :analysisType AND scope = :scope AND isCurrent = 1
         ORDER BY updatedAtEpochMs DESC

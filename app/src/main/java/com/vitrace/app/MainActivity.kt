@@ -47,6 +47,7 @@ import androidx.health.connect.client.PermissionController
 import com.vitrace.app.analysis.AnalysisBlock
 import com.vitrace.app.analysis.AnalysisConfidence
 import com.vitrace.app.analysis.PersonalAnalysisContext
+import com.vitrace.app.analysis.SportEfficiencyComparison
 import com.vitrace.app.analysis.buildVitaTraceAnalysis
 import com.vitrace.app.data.UserProfileEntity
 import com.vitrace.app.health.ActivityWindow
@@ -66,6 +67,7 @@ import com.vitrace.app.health.SportDomainSummary
 import com.vitrace.app.health.WorkoutTypeDaySummary
 import com.vitrace.app.health.WorkoutTypeSummary
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.roundToLong
 
 class MainActivity : ComponentActivity() {
@@ -940,9 +942,11 @@ private fun PersonalAnalysisContextCard(
             "sen/fazy: ${analysisContext.monthlySleepPhases.size} miesiecy",
             "sen + aktywnosc: ${comparison.totalSampleDays} wspolnych dni",
             "sport: ${sportMonths.size} miesiecznych trendow chodzenia/biegania",
+            "wydolnosc: ${analysisContext.sportEfficiencyComparisons.size} porownania miesiac-do-miesiaca",
             "aktualne okno: ${analysisContext.timeContext.currentStartDate} - ${analysisContext.timeContext.currentEndDate}",
             "dzisiaj: ${analysisContext.timeContext.currentPartialDay} jest dniem czesciowym",
-            "zapis analizy: ${analysisContext.currentSleepActivityResult?.id ?: "brak"} current_snapshot",
+            "zapis snu: ${analysisContext.currentSleepActivityResult?.id ?: "brak"} current_snapshot",
+            "zapis sportu: ${analysisContext.currentSportEfficiencyResult?.id ?: "brak"} current_snapshot",
             "AI dostanie te wyniki jako AiHealthSummary, nie kafelki z UI",
         ),
         quality = if (comparison.confidence == AnalysisConfidence.Insufficient) DiagnosticQuality.Warning else DiagnosticQuality.Good,
@@ -988,33 +992,30 @@ private fun SleepActivityAnalysisCard(
 private fun SportTrendAnalysisCard(
     analysisContext: PersonalAnalysisContext?,
 ) {
-    val trends = analysisContext?.monthlySportTrends.orEmpty()
-    if (trends.isEmpty()) {
+    val comparisons = analysisContext?.sportEfficiencyComparisons.orEmpty()
+    if (comparisons.isEmpty()) {
         AnalysisCard(
             title = "Trendy treningow",
-            lines = listOf("brak miesiecznych sesji chodzenia/biegania do analizy"),
+            lines = listOf("brak porownan miesiac-do-miesiaca dla chodzenia/biegania"),
             quality = DiagnosticQuality.Warning,
         )
         return
     }
 
-    val latestRunning = trends.firstOrNull { trend -> trend.workoutType == "running" }
-    val latestWalking = trends.firstOrNull { trend -> trend.workoutType == "walking" }
     val lines = buildList {
-        latestWalking?.let { trend ->
-            add("chodzenie ${trend.period}: ${trend.distanceKm.format1()} km, ${trend.sessionCount} sesji")
-            add("chodzenie koszt: ${trend.activeCaloriesPerKm.format0OrMissing()} kcal/km | ${trend.activeCaloriesPerMinute.format1OrMissing()} kcal/min")
+        comparisons.forEach { comparison ->
+            addAll(comparison.toUiLines())
         }
-        latestRunning?.let { trend ->
-            add("bieganie ${trend.period}: ${trend.distanceKm.format1()} km, ${trend.sessionCount} sesji")
-            add("bieg: ${trend.avgPaceSecondsPerKm.formatPaceOrMissing()} min/km | puls ${trend.avgHeartRateBpm.format0OrMissing()} bpm")
-        }
-        add("kolejny krok: porownac podobne sesje miesiac do miesiaca")
+        add("wykres: do wdrozenia jako linie miesiecy dla dystansu, pulsu, tempa i kcal/km")
     }
+    val bestConfidence = comparisons
+        .map { comparison -> comparison.confidence }
+        .maxByOrNull { confidence -> confidence.rank() }
+        ?: AnalysisConfidence.Insufficient
     AnalysisCard(
-        title = "Trendy treningow",
+        title = "Wydolnosc miesiac do miesiaca",
         lines = lines,
-        quality = DiagnosticQuality.Good,
+        quality = bestConfidence.quality(),
     )
 }
 
@@ -2045,6 +2046,18 @@ private fun Double?.formatSigned1OrMissing(): String {
     return this?.let { value -> "%+.1f".format(value) } ?: "brak"
 }
 
+private fun Double.formatSigned1(): String = "%+.1f".format(this)
+
+private fun Int.formatSigned(): String = "%+d".format(this)
+
+private fun Double?.formatSigned0WithUnit(unit: String): String {
+    return this?.let { value -> "%+.0f %s".format(value, unit) } ?: "brak"
+}
+
+private fun Double?.formatSigned1WithUnit(unit: String): String {
+    return this?.let { value -> "%+.1f %s".format(value, unit) } ?: "brak"
+}
+
 private fun Double?.format0OrMissing(): String {
     return this?.format0() ?: "brak"
 }
@@ -2063,12 +2076,67 @@ private fun Double?.formatPaceOrMissing(): String {
     return "%d:%02d".format(minutes, seconds)
 }
 
+private fun Double?.formatSignedPaceDelta(): String {
+    if (this == null) {
+        return "brak"
+    }
+    val totalSeconds = abs(this).roundToLong()
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    val sign = when {
+        this > 0.0 -> "+"
+        this < 0.0 -> "-"
+        else -> "+/-"
+    }
+    return "$sign%d:%02d/km".format(minutes, seconds)
+}
+
+private fun SportEfficiencyComparison.toUiLines(): List<String> {
+    val currentTrend = current
+    val previousTrend = previous
+    val deltaTrend = delta
+    val label = workoutType.workoutTypeLabel()
+    if (currentTrend == null || previousTrend == null || deltaTrend == null) {
+        return listOf(
+            "$label: za malo miesiecy do porownania",
+            "pewnosc: ${confidence.label()}",
+            "wniosek: $interpretation",
+        )
+    }
+
+    return listOf(
+        "$label ${currentTrend.period} vs ${previousTrend.period}",
+        "dystans: ${deltaTrend.distanceKm.formatSigned1()} km | sesje ${deltaTrend.sessionCount.formatSigned()}",
+        "puls: ${deltaTrend.avgHeartRateBpm.formatSigned0WithUnit("bpm")} | tempo ${deltaTrend.avgPaceSecondsPerKm.formatSignedPaceDelta()}",
+        "kcal/km: ${deltaTrend.activeCaloriesPerKm.formatSigned0WithUnit("kcal")} | kcal/min ${deltaTrend.activeCaloriesPerMinute.formatSigned1WithUnit("kcal")}",
+        "pewnosc: ${confidence.label()}",
+        "wniosek: $interpretation",
+    )
+}
+
+private fun String.workoutTypeLabel(): String {
+    return when (this) {
+        "walking" -> "Chodzenie"
+        "running" -> "Bieganie"
+        else -> this
+    }
+}
+
 private fun AnalysisConfidence.label(): String {
     return when (this) {
         AnalysisConfidence.Insufficient -> "za mala probka"
         AnalysisConfidence.Low -> "niska"
         AnalysisConfidence.Medium -> "srednia"
         AnalysisConfidence.High -> "wysoka"
+    }
+}
+
+private fun AnalysisConfidence.rank(): Int {
+    return when (this) {
+        AnalysisConfidence.Insufficient -> 0
+        AnalysisConfidence.Low -> 1
+        AnalysisConfidence.Medium -> 2
+        AnalysisConfidence.High -> 3
     }
 }
 

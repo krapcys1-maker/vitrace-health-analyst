@@ -12,7 +12,9 @@ import java.time.ZoneId
 import kotlin.math.abs
 
 private const val SLEEP_ACTIVITY_ENGINE_VERSION = "sleep_activity_v1"
+private const val SPORT_EFFICIENCY_ENGINE_VERSION = "sport_efficiency_v1"
 private const val CURRENT_SCOPE = "current_snapshot"
+private const val CURRENT_SNAPSHOT_RETENTION = 5
 
 data class PersonalAnalysisContext(
     val profile: AnalysisProfile,
@@ -20,7 +22,9 @@ data class PersonalAnalysisContext(
     val monthlySleepPhases: List<MonthlySleepPhaseAnalysis>,
     val sleepActivityComparison: SleepActivityComparison,
     val monthlySportTrends: List<MonthlySportTrend>,
+    val sportEfficiencyComparisons: List<SportEfficiencyComparison>,
     val currentSleepActivityResult: AnalysisResultEntity?,
+    val currentSportEfficiencyResult: AnalysisResultEntity?,
 )
 
 data class AnalysisProfile(
@@ -133,6 +137,28 @@ data class MonthlySportTrend(
         get() = activeCaloriesKcal.takeIf { totalDurationMinutes > 0 }?.div(totalDurationMinutes)
 }
 
+data class SportEfficiencyComparison(
+    val workoutType: String,
+    val current: MonthlySportTrend?,
+    val previous: MonthlySportTrend?,
+    val delta: SportEfficiencyDelta?,
+    val confidence: AnalysisConfidence,
+    val interpretation: String,
+)
+
+data class SportEfficiencyDelta(
+    val sessionCount: Int,
+    val totalDurationMinutes: Double,
+    val distanceKm: Double,
+    val activeCaloriesKcal: Double,
+    val avgHeartRateBpm: Double?,
+    val avgPaceSecondsPerKm: Double?,
+    val activeCaloriesPerKm: Double?,
+    val activeCaloriesPerMinute: Double?,
+    val avgCadence: Double?,
+    val avgVo2Max: Double?,
+)
+
 enum class AnalysisConfidence {
     Insufficient,
     Low,
@@ -152,6 +178,11 @@ object AnalysisContextBuilder {
             .filter { row -> timeContext.stateFor(row.date) != DayAnalysisState.CurrentPartial }
             .filter { row -> timeContext.stateFor(row.date) != DayAnalysisState.FutureOrUnknown }
         val comparison = buildSleepActivityComparison(sleepActivityRows)
+        val monthlySportTrends = dao.monthlyWorkoutSessions(
+            workoutTypes = listOf("walking", "running"),
+            limit = 24,
+        ).map { aggregate -> aggregate.toTrend() }
+        val sportEfficiencyComparisons = buildSportEfficiencyComparisons(monthlySportTrends, timeContext)
         return PersonalAnalysisContext(
             profile = profile.toAnalysisProfile(),
             timeContext = timeContext,
@@ -159,11 +190,10 @@ object AnalysisContextBuilder {
                 aggregate.toAnalysis()
             },
             sleepActivityComparison = comparison,
-            monthlySportTrends = dao.monthlyWorkoutSessions(
-                workoutTypes = listOf("walking", "running"),
-                limit = 24,
-            ).map { aggregate -> aggregate.toTrend() },
+            monthlySportTrends = monthlySportTrends,
+            sportEfficiencyComparisons = sportEfficiencyComparisons,
             currentSleepActivityResult = database.analysisResultDao().current("sleep_activity", CURRENT_SCOPE),
+            currentSportEfficiencyResult = database.analysisResultDao().current("sport_efficiency", CURRENT_SCOPE),
         )
     }
 
@@ -173,12 +203,21 @@ object AnalysisContextBuilder {
         now: Instant = Instant.now(),
     ): PersonalAnalysisContext {
         val context = build(database, profile, now)
-        val result = context.toSleepActivityResult(now)
+        val sleepActivityResult = context.toSleepActivityResult(now)
+        val sportEfficiencyResult = context.toSportEfficiencyResult(now)
         val dao = database.analysisResultDao()
-        dao.supersedeCurrent(result.analysisType, result.scope, now.toEpochMilli())
-        dao.insert(result)
+        listOf(sleepActivityResult, sportEfficiencyResult).forEach { result ->
+            dao.supersedeCurrent(result.analysisType, result.scope, now.toEpochMilli())
+            dao.insert(result)
+            dao.deleteOldSupersededCurrentSnapshots(
+                analysisType = result.analysisType,
+                scope = result.scope,
+                keepCount = CURRENT_SNAPSHOT_RETENTION,
+            )
+        }
         return context.copy(
             currentSleepActivityResult = dao.current("sleep_activity", CURRENT_SCOPE),
+            currentSportEfficiencyResult = dao.current("sport_efficiency", CURRENT_SCOPE),
         )
     }
 
@@ -222,6 +261,36 @@ object AnalysisContextBuilder {
             confidence = confidence,
             interpretation = interpretationFor(delta, confidence),
         )
+    }
+
+    private fun buildSportEfficiencyComparisons(
+        trends: List<MonthlySportTrend>,
+        timeContext: AnalysisTimeContext,
+    ): List<SportEfficiencyComparison> {
+        val partialMonth = timeContext.currentPartialDay.take(7)
+        val workoutOrder = listOf("walking", "running")
+        return workoutOrder.map { workoutType ->
+            val sorted = trends
+                .filter { trend -> trend.workoutType == workoutType }
+                .filter { trend -> trend.period != partialMonth }
+                .sortedByDescending { trend -> trend.period }
+            val current = sorted.getOrNull(0)
+            val previous = sorted.getOrNull(1)
+            val delta = if (current != null && previous != null) {
+                current.deltaAgainst(previous)
+            } else {
+                null
+            }
+            val confidence = sportConfidenceFor(current, previous)
+            SportEfficiencyComparison(
+                workoutType = workoutType,
+                current = current,
+                previous = previous,
+                delta = delta,
+                confidence = confidence,
+                interpretation = sportInterpretationFor(delta, confidence),
+            )
+        }
     }
 
     private fun buildTimeContext(now: Instant): AnalysisTimeContext {
@@ -276,6 +345,40 @@ private fun PersonalAnalysisContext.toSleepActivityResult(now: Instant): Analysi
     )
 }
 
+private fun PersonalAnalysisContext.toSportEfficiencyResult(now: Instant): AnalysisResultEntity {
+    val comparisonsWithData = sportEfficiencyComparisons.filter { comparison -> comparison.delta != null }
+    val bestSummary = comparisonsWithData.firstOrNull { comparison ->
+        comparison.confidence != AnalysisConfidence.Insufficient
+    } ?: comparisonsWithData.firstOrNull()
+    val summary = bestSummary?.summaryText()
+        ?: "za malo miesiecy chodzenia/biegania do porownania wydolnosci"
+    val sampleSize = comparisonsWithData.sumOf { comparison ->
+        (comparison.current?.sessionCount ?: 0) + (comparison.previous?.sessionCount ?: 0)
+    }
+    return AnalysisResultEntity(
+        analysisType = "sport_efficiency",
+        scope = CURRENT_SCOPE,
+        engineVersion = SPORT_EFFICIENCY_ENGINE_VERSION,
+        baselineStartDate = null,
+        baselineEndDate = sportEfficiencyComparisons.mapNotNull { comparison -> comparison.previous?.period }.minOrNull(),
+        currentStartDate = sportEfficiencyComparisons.mapNotNull { comparison -> comparison.current?.period }.minOrNull(),
+        currentEndDate = sportEfficiencyComparisons.mapNotNull { comparison -> comparison.current?.period }.maxOrNull(),
+        generatedForDate = timeContext.today,
+        summaryTitle = "Wydolnosc sportowa",
+        summaryText = summary,
+        confidence = bestSummary?.confidence?.name ?: AnalysisConfidence.Insufficient.name,
+        sampleSize = sampleSize,
+        resultJson = sportEfficiencyComparisons.toJson(),
+        sourceCoverageJson = sourceCoverageJson(),
+        timeContextJson = timeContext.toJson(),
+        isCurrent = true,
+        pinned = false,
+        createdAtEpochMs = now.toEpochMilli(),
+        updatedAtEpochMs = now.toEpochMilli(),
+        supersededAtEpochMs = null,
+    )
+}
+
 private fun UserProfileEntity.toAnalysisProfile(): AnalysisProfile {
     return AnalysisProfile(
         sex = sex,
@@ -313,6 +416,21 @@ private fun MonthlyWorkoutSessionAggregate.toTrend(): MonthlySportTrend {
         avgPaceSecondsPerKm = avgPaceSecondsPerKm,
         avgCadence = avgCadence,
         avgVo2Max = avgVo2Max,
+    )
+}
+
+private fun MonthlySportTrend.deltaAgainst(previous: MonthlySportTrend): SportEfficiencyDelta {
+    return SportEfficiencyDelta(
+        sessionCount = sessionCount - previous.sessionCount,
+        totalDurationMinutes = totalDurationMinutes - previous.totalDurationMinutes,
+        distanceKm = distanceKm - previous.distanceKm,
+        activeCaloriesKcal = activeCaloriesKcal - previous.activeCaloriesKcal,
+        avgHeartRateBpm = avgHeartRateBpm.minusNullable(previous.avgHeartRateBpm),
+        avgPaceSecondsPerKm = avgPaceSecondsPerKm.minusNullable(previous.avgPaceSecondsPerKm),
+        activeCaloriesPerKm = activeCaloriesPerKm.minusNullable(previous.activeCaloriesPerKm),
+        activeCaloriesPerMinute = activeCaloriesPerMinute.minusNullable(previous.activeCaloriesPerMinute),
+        avgCadence = avgCadence.minusNullable(previous.avgCadence),
+        avgVo2Max = avgVo2Max.minusNullable(previous.avgVo2Max),
     )
 }
 
@@ -384,6 +502,70 @@ private fun interpretationFor(
     }
 }
 
+private fun sportConfidenceFor(
+    current: MonthlySportTrend?,
+    previous: MonthlySportTrend?,
+): AnalysisConfidence {
+    if (current == null || previous == null) {
+        return AnalysisConfidence.Insufficient
+    }
+    val smallestSessionGroup = minOf(current.sessionCount, previous.sessionCount)
+    val hasHeartRate = current.avgHeartRateBpm != null && previous.avgHeartRateBpm != null
+    val hasPace = current.avgPaceSecondsPerKm != null && previous.avgPaceSecondsPerKm != null
+    val hasCost = current.activeCaloriesPerKm != null && previous.activeCaloriesPerKm != null
+    val volumeRatio = if (previous.distanceKm > 0.0) current.distanceKm / previous.distanceKm else 1.0
+
+    val baseConfidence = when {
+        smallestSessionGroup < 2 -> AnalysisConfidence.Insufficient
+        smallestSessionGroup >= 8 && hasHeartRate && hasPace && hasCost -> AnalysisConfidence.High
+        smallestSessionGroup >= 4 && hasHeartRate && (hasPace || hasCost) -> AnalysisConfidence.Medium
+        hasHeartRate || hasPace || hasCost -> AnalysisConfidence.Low
+        else -> AnalysisConfidence.Insufficient
+    }
+    return if (baseConfidence != AnalysisConfidence.Insufficient && (volumeRatio < 0.5 || volumeRatio > 2.0)) {
+        AnalysisConfidence.Low
+    } else {
+        baseConfidence
+    }
+}
+
+private fun sportInterpretationFor(
+    delta: SportEfficiencyDelta?,
+    confidence: AnalysisConfidence,
+): String {
+    if (delta == null || confidence == AnalysisConfidence.Insufficient) {
+        return "za malo porownywalnych miesiecy lub sesji; nie wyciagamy wniosku"
+    }
+
+    val heartRateLower = delta.avgHeartRateBpm?.let { value -> value <= -3.0 } == true
+    val heartRateHigher = delta.avgHeartRateBpm?.let { value -> value >= 3.0 } == true
+    val paceFaster = delta.avgPaceSecondsPerKm?.let { value -> value <= -10.0 } == true
+    val paceSlower = delta.avgPaceSecondsPerKm?.let { value -> value >= 10.0 } == true
+    val costLower = delta.activeCaloriesPerKm?.let { value -> value <= -5.0 } == true
+    val costHigher = delta.activeCaloriesPerKm?.let { value -> value >= 5.0 } == true
+    val muchLowerVolume = delta.distanceKm <= -50.0 || delta.sessionCount <= -5
+    val muchHigherVolume = delta.distanceKm >= 50.0 || delta.sessionCount >= 5
+
+    return when {
+        muchLowerVolume && (heartRateLower || paceFaster || costLower) ->
+            "metryki wygladaja lepiej, ale miesiac mial duzo mniejsza objetosc; traktuj jako niski sygnal"
+        muchHigherVolume && !heartRateHigher && !paceSlower ->
+            "objetosc wzrosla bez pogorszenia pulsu i tempa; to obiecujacy sygnal wytrzymalosci"
+        heartRateLower && !paceSlower ->
+            "puls spadl przy podobnym albo lepszym tempie; to pierwszy sygnal lepszej wydolnosci"
+        paceFaster && !heartRateHigher ->
+            "tempo jest lepsze bez wyraznego wzrostu pulsu; to wyglada jak poprawa formy"
+        heartRateHigher && paceSlower ->
+            "miesiac wyglada ciezszy: wolniejsze tempo i wyzszy puls"
+        costLower && !paceSlower ->
+            "koszt kcal/km spadl przy podobnym albo lepszym tempie; wydajnosc mogla sie poprawic"
+        costHigher && !paceFaster ->
+            "koszt kcal/km wzrosl; sprawdzimy to pozniej z masa ciala i intensywnoscia"
+        else ->
+            "sygnal jest mieszany; potrzebny wykres i porownanie podobnych sesji"
+    }
+}
+
 private fun SleepActivityComparison.toJson(): String {
     val delta = delta
     return """
@@ -402,6 +584,82 @@ private fun SleepActivityComparison.toJson(): String {
           "interpretation": "${interpretation.escapeJson()}"
         }
     """.trimIndent()
+}
+
+private fun List<SportEfficiencyComparison>.toJson(): String {
+    return """
+        {
+          "analysisType": "sport_efficiency",
+          "comparisons": [
+            ${joinToString(",\n") { comparison -> comparison.toJson() }}
+          ],
+          "note": "Month-to-month aggregate comparison; later engine should compare similar sessions by workout type, distance, duration, pace, and intensity."
+        }
+    """.trimIndent()
+}
+
+private fun SportEfficiencyComparison.toJson(): String {
+    return """
+        {
+          "workoutType": "$workoutType",
+          "confidence": "${confidence.name}",
+          "current": ${current.toJson()},
+          "previous": ${previous.toJson()},
+          "delta": ${delta.toJson()},
+          "interpretation": "${interpretation.escapeJson()}"
+        }
+    """.trimIndent()
+}
+
+private fun MonthlySportTrend?.toJson(): String {
+    if (this == null) {
+        return "null"
+    }
+    return """
+        {
+          "period": "$period",
+          "workoutType": "$workoutType",
+          "sessionCount": $sessionCount,
+          "totalDurationMinutes": ${totalDurationMinutes.jsonNumber()},
+          "distanceKm": ${distanceKm.jsonNumber()},
+          "activeCaloriesKcal": ${activeCaloriesKcal.jsonNumber()},
+          "totalCaloriesKcal": ${totalCaloriesKcal.jsonNumber()},
+          "avgHeartRateBpm": ${avgHeartRateBpm.jsonNumber()},
+          "maxHeartRateBpm": ${maxHeartRateBpm.jsonNumber()},
+          "avgPaceSecondsPerKm": ${avgPaceSecondsPerKm.jsonNumber()},
+          "avgCadence": ${avgCadence.jsonNumber()},
+          "avgVo2Max": ${avgVo2Max.jsonNumber()},
+          "activeCaloriesPerKm": ${activeCaloriesPerKm.jsonNumber()},
+          "activeCaloriesPerMinute": ${activeCaloriesPerMinute.jsonNumber()}
+        }
+    """.trimIndent()
+}
+
+private fun SportEfficiencyDelta?.toJson(): String {
+    if (this == null) {
+        return "null"
+    }
+    return """
+        {
+          "sessionCount": $sessionCount,
+          "totalDurationMinutes": ${totalDurationMinutes.jsonNumber()},
+          "distanceKm": ${distanceKm.jsonNumber()},
+          "activeCaloriesKcal": ${activeCaloriesKcal.jsonNumber()},
+          "avgHeartRateBpm": ${avgHeartRateBpm.jsonNumber()},
+          "avgPaceSecondsPerKm": ${avgPaceSecondsPerKm.jsonNumber()},
+          "activeCaloriesPerKm": ${activeCaloriesPerKm.jsonNumber()},
+          "activeCaloriesPerMinute": ${activeCaloriesPerMinute.jsonNumber()},
+          "avgCadence": ${avgCadence.jsonNumber()},
+          "avgVo2Max": ${avgVo2Max.jsonNumber()}
+        }
+    """.trimIndent()
+}
+
+private fun SportEfficiencyComparison.summaryText(): String {
+    val delta = delta ?: return interpretation
+    return "${workoutType.labelForAnalysis()}: puls ${delta.avgHeartRateBpm.formatSigned0Json()} bpm; " +
+        "tempo ${delta.avgPaceSecondsPerKm.formatSignedSecondsJson()} s/km; " +
+        "kcal/km ${delta.activeCaloriesPerKm.formatSigned0Json()}; $interpretation"
 }
 
 private fun SleepAverages?.toJson(): String {
@@ -445,6 +703,7 @@ private fun PersonalAnalysisContext.sourceCoverageJson(): String {
           "sleepPhaseMonths": ${monthlySleepPhases.size},
           "sleepActivityDays": ${sleepActivityComparison.totalSampleDays},
           "sportTrendRows": ${monthlySportTrends.size},
+          "sportEfficiencyComparisons": ${sportEfficiencyComparisons.size},
           "note": "History is richer than current live Health Connect coverage."
         }
     """.trimIndent()
@@ -521,4 +780,20 @@ private fun Double.formatSigned0(): String {
 
 private fun Double?.formatSignedPercentJson(): String {
     return this?.let { value -> "%+.0f%%".format(value) } ?: "brak"
+}
+
+private fun Double?.formatSigned0Json(): String {
+    return this?.let { value -> "%+.0f".format(value) } ?: "brak"
+}
+
+private fun Double?.formatSignedSecondsJson(): String {
+    return this?.let { value -> "%+.0f".format(value) } ?: "brak"
+}
+
+private fun String.labelForAnalysis(): String {
+    return when (this) {
+        "walking" -> "chodzenie"
+        "running" -> "bieganie"
+        else -> this
+    }
 }

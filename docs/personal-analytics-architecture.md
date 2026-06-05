@@ -180,6 +180,15 @@ Walking/running workout analytics:
 - calories burned per minute
 - same-effort heart-rate trend
 
+First implementation:
+
+- `sport_efficiency/current_snapshot` compares the newest month with the previous month separately for walking and running.
+- It excludes the current partial month from month-to-month conclusions; partial months may be visible as data but not used as closed-period evidence.
+- It stores deltas for session count, distance, duration, active calories, average heart rate, average pace, kcal/km, kcal/min, cadence, and VO2 max when present.
+- It exposes confidence from sample size and metric coverage.
+- UI should show this as an answer-first comparison, not a raw data list.
+- This is a useful first signal, but it is still an aggregate month-to-month comparison.
+
 Cardio efficiency should compare similar sessions, not random totals. Candidate grouping:
 
 - same workout type
@@ -198,6 +207,14 @@ Running, 3-5 km sessions:
 - sample: 4 recent sessions versus 8 baseline sessions
 - confidence: low/medium depending on sample
 ```
+
+Sport chart plan:
+
+- steps chart: daily/weekly/monthly/yearly steps and estimated kilometers
+- walking chart: monthly distance, average HR, average pace, kcal/km
+- running chart: monthly distance, average HR, average pace, kcal/km, VO2 max if present
+- efficiency chart: paired lines for average HR and pace, with month-to-month delta labels
+- drill-down: tap a month to see sessions used in that month and source coverage
 
 Calorie efficiency should track:
 
