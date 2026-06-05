@@ -74,9 +74,6 @@ def build_daily_aggregates(
     zone: dt.tzinfo,
 ) -> dict[str, dict[str, Any]]:
     daily: dict[str, dict[str, Any]] = collections.defaultdict(new_day)
-    raw_activity_by_day_sid: dict[str, dict[str, dict[str, float]]] = collections.defaultdict(
-        lambda: collections.defaultdict(new_raw_activity)
-    )
 
     with fitness_file.open("r", encoding="utf-8-sig", newline="") as handle:
         for row in csv.DictReader(handle):
@@ -89,10 +86,7 @@ def build_daily_aggregates(
             day = daily[date]
 
             if key == "steps":
-                raw = raw_activity_by_day_sid[date][row["Sid"]]
-                raw["steps"] += int(float(value.get("steps") or 0))
-                raw["distanceMeters"] += float(value.get("distance") or 0)
-                raw["activeCaloriesKcal"] += float(value.get("calories") or 0)
+                continue
             elif key == "heart_rate":
                 bpm = value.get("bpm")
                 if bpm not in (None, ""):
@@ -122,7 +116,7 @@ def build_daily_aggregates(
                     day["spo2Count"] += 1
                     day["bodyLast"] = max(day["bodyLast"] or 0, timestamp)
 
-    apply_aggregated_activity(daily, aggregated_file, zone)
+    apply_aggregated_daily_reports(daily, aggregated_file, zone)
 
     with sport_file.open("r", encoding="utf-8-sig", newline="") as handle:
         for row in csv.DictReader(handle):
@@ -147,20 +141,16 @@ def build_daily_aggregates(
     return daily
 
 
-def new_raw_activity() -> dict[str, float]:
-    return {
-        "steps": 0,
-        "distanceMeters": 0.0,
-        "activeCaloriesKcal": 0.0,
-    }
-
-
 def new_day() -> dict[str, Any]:
     return {
         "steps": 0,
         "distanceMeters": 0.0,
         "activeCaloriesKcal": 0.0,
         "heart": [],
+        "heartAvg": None,
+        "heartMin": None,
+        "heartMax": None,
+        "heartReportCount": 0,
         "sleepSessions": 0,
         "sleepMinutes": 0,
         "sleepLast": None,
@@ -177,22 +167,7 @@ def new_day() -> dict[str, Any]:
     }
 
 
-def apply_raw_activity_fallback(
-    daily: dict[str, dict[str, Any]],
-    raw_activity_by_day_sid: dict[str, dict[str, dict[str, float]]],
-) -> None:
-    """Use the strongest single raw source only when no daily report exists yet."""
-    for date, by_sid in raw_activity_by_day_sid.items():
-        if not by_sid:
-            continue
-        best = max(by_sid.values(), key=lambda values: values["steps"])
-        day = daily[date]
-        day["steps"] = int(best["steps"])
-        day["distanceMeters"] = float(best["distanceMeters"])
-        day["activeCaloriesKcal"] = float(best["activeCaloriesKcal"])
-
-
-def apply_aggregated_activity(
+def apply_aggregated_daily_reports(
     daily: dict[str, dict[str, Any]],
     aggregated_file: Path,
     zone: dt.tzinfo,
@@ -200,7 +175,7 @@ def apply_aggregated_activity(
     """Prefer Mi Fitness daily_report values; they match the app's deduped totals."""
     with aggregated_file.open("r", encoding="utf-8-sig", newline="") as handle:
         for row in csv.DictReader(handle):
-            if row["Tag"] != "daily_report" or row["Key"] != "steps":
+            if row["Tag"] != "daily_report":
                 continue
 
             value = parse_json(row.get("Value"))
@@ -210,9 +185,25 @@ def apply_aggregated_activity(
 
             date = dt.datetime.fromtimestamp(timestamp, zone).date().isoformat()
             day = daily[date]
-            day["steps"] = int(float(value.get("steps") or 0))
-            day["distanceMeters"] = float(value.get("distance") or 0)
-            day["activeCaloriesKcal"] = float(value.get("calories") or 0)
+            key = row["Key"]
+
+            if key == "steps":
+                day["steps"] = int(float(value.get("steps") or 0))
+                day["distanceMeters"] = float(value.get("distance") or 0)
+                day["activeCaloriesKcal"] = float(value.get("calories") or 0)
+            elif key == "heart_rate":
+                day["heartAvg"] = optional_float(value.get("avg_hr"))
+                day["heartMin"] = optional_int(value.get("min_hr"))
+                day["heartMax"] = optional_int(value.get("max_hr"))
+                day["heartReportCount"] = 1
+            elif key == "sleep":
+                day["sleepSessions"] = 1 if optional_int(value.get("total_duration")) else 0
+                day["sleepMinutes"] = optional_int(value.get("total_duration")) or 0
+                day["sleepLast"] = latest_sleep_segment_end(value) or timestamp
+            elif key == "spo2":
+                day["spo2"] = optional_float(value.get("avg_spo2"))
+                day["spo2Count"] = 1 if day["spo2"] is not None else 0
+                day["bodyLast"] = max(day["bodyLast"] or 0, timestamp)
 
 
 def parse_json(raw: str | None) -> dict[str, Any]:
@@ -223,6 +214,31 @@ def parse_json(raw: str | None) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return value if isinstance(value, dict) else {}
+
+
+def optional_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    return int(float(value))
+
+
+def optional_float(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    return float(value)
+
+
+def latest_sleep_segment_end(value: dict[str, Any]) -> int | None:
+    segments = value.get("segment_details")
+    if not isinstance(segments, list):
+        return None
+    ends = [
+        optional_int(segment.get("wake_up_time"))
+        for segment in segments
+        if isinstance(segment, dict)
+    ]
+    ends = [end for end in ends if end is not None]
+    return max(ends) if ends else None
 
 
 def upsert_profile(
@@ -266,6 +282,12 @@ def upsert_daily_tables(
         )
 
         heart_values = day["heart"]
+        heart_count = len(heart_values) if heart_values else day["heartReportCount"]
+        heart_min = day["heartMin"] if day["heartMin"] is not None else (min(heart_values) if heart_values else None)
+        heart_max = day["heartMax"] if day["heartMax"] is not None else (max(heart_values) if heart_values else None)
+        heart_avg = day["heartAvg"] if day["heartAvg"] is not None else (
+            (sum(heart_values) / len(heart_values)) if heart_values else None
+        )
         con.execute(
             """
             INSERT OR REPLACE INTO daily_heart_summaries (
@@ -274,11 +296,11 @@ def upsert_daily_tables(
             """,
             (
                 date,
-                len(heart_values),
-                min(heart_values) if heart_values else None,
-                max(heart_values) if heart_values else None,
-                (sum(heart_values) / len(heart_values)) if heart_values else None,
-                SOURCE if heart_values else "none",
+                heart_count,
+                heart_min,
+                heart_max,
+                heart_avg,
+                SOURCE if heart_count > 0 else "none",
                 None,
                 synced_at_ms,
             ),

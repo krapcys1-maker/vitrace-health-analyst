@@ -63,6 +63,8 @@ Current local development importer:
 - Writes normalized daily aggregates into a copied VitaTrace SQLite database.
 - Does not commit raw CSV data or generated databases.
 - Current mapped aggregates: activity, heart, sleep, workouts, weight, VO2 max, SpO2, and user profile settings.
+- `tools/audit_mifitness_import.py`
+- Verifies the copied database against private Mi Fitness daily reports and workout records before the import is trusted.
 
 After tests pass, run the importer on the private export and compare:
 
@@ -80,12 +82,12 @@ After tests pass, run the importer on the private export and compare:
 
 `hlth_center_fitness_data.csv`:
 
-- raw `steps` records are not summed across `Sid`; they can double-count phone and wearable sources
-- `heart_rate` and resting heart keys -> `daily_heart_summaries`
-- `watch_night_sleep` and related sleep keys -> `daily_sleep_summaries`
+- raw `steps` records are not imported into dashboard summaries; they can double-count phone and wearable sources and can also contain raw-only days that do not match Mi Fitness monthly/yearly totals
+- raw `heart_rate` can fill extra sample-only heart days when no `daily_report/heart_rate` exists
+- raw `watch_night_sleep` can act as fallback, but `daily_report/sleep` is preferred when present
 - `weight` -> `daily_body_summaries.latestWeightKg`
 - `vo2_max` -> `daily_body_summaries.latestVo2Max`
-- `single_spo2` -> `daily_body_summaries.latestSpo2Percent`
+- `single_spo2` can act as fallback, but `daily_report/spo2.avg_spo2` is preferred when present
 
 Workout files:
 
@@ -97,8 +99,29 @@ Unclear fields must be imported with uncertainty flags or skipped until verified
 `hlth_center_aggregated_fitness_data.csv`:
 
 - `daily_report` + `steps` is the canonical source for daily steps, distance, and activity calories because it matches Mi Fitness app totals after source deduplication.
+- `daily_report` + `heart_rate` is the canonical source for daily average, min, and max heart rate when present.
+- `daily_report` + `sleep` is the canonical source for daily total sleep minutes when present.
+- `daily_report` + `spo2` is the canonical source for daily average SpO2 when present.
 - Do not calculate monthly/yearly steps by summing raw `steps` rows from multiple `Sid` values.
 - Example audit: September 2024 raw `Sid` sum was 611,046 steps, but canonical daily reports sum to 325,587 steps, matching Mi Fitness.
+
+Current verified audit from 2026-06-05:
+
+- Activity: 1,031 canonical days, 0 bad days, 0 bad months, 0 bad years, 0 extra positive DB days.
+- Years: 2021 = 173,975; 2022 = 455,416; 2023 = 1,150,305; 2024 = 2,799,620; 2025 = 3,191,192; 2026 = 1,366,486 steps.
+- Best month in the export: 2026-04 = 559,104 steps.
+- September 2024: 325,587 steps.
+- Heart: 196 canonical daily reports, 0 bad canonical days, plus 2 extra raw-only heart days.
+- Sleep: 133 canonical daily reports, 0 bad days.
+- SpO2: 5 canonical daily reports, 0 bad days.
+- Workouts: 303 sessions across 230 days, 0 bad days.
+
+Before saying the history import is correct, run:
+
+```powershell
+python tools\import_mifitness_history_to_db.py --export-dir "dane historyczne z zegarka" --db "$env:TEMP\vitrace_full_history_audit\vitrace.db" --age-years 40 --height-cm 186 --weight-kg 88 --steps-per-km 1250 --timezone-offset-hours 3
+python tools\audit_mifitness_import.py --export-dir "dane historyczne z zegarka" --db "$env:TEMP\vitrace_full_history_audit\vitrace.db" --timezone-offset-hours 3
+```
 
 ## Analytics Outputs From History
 

@@ -5,10 +5,12 @@
 
 # Raw/private health exports
 dane historyczne z zegarka/
+dokumentacja/
 data/raw/
 *.db
 *.sqlite
 *.sqlite3
+__pycache__/
 
 # Android / Gradle build output
 local.properties
