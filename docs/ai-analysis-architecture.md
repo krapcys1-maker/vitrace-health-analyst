@@ -16,7 +16,7 @@ local raw + detailed analytical tables
 deterministic analytics engine
         |
         v
-AiHealthSummary
+AI Context Bundle
         |
         v
 AI provider, for example DeepSeek
@@ -26,6 +26,14 @@ plain-language report in Analiza / Zdrowie
 ```
 
 The app UI should call an `AnalysisContextBuilder` or equivalent service. The UI should not assemble prompts from cards.
+
+The current offline implementation is:
+
+```powershell
+python tools\build_ai_context_bundle.py --db build\phone-db-check\phone-current-vitrace.db --output build\ai-context-bundle.json --prompt-output build\ai-context-prompt.md
+```
+
+Generated files stay in `build/` because they summarize private health data.
 
 The deterministic engine owns all calculations:
 
@@ -42,12 +50,33 @@ AI owns only explanation:
 - how strong or weak the evidence is
 - which data is missing
 - what the user can test next
+- which 3-5 findings deserve the main screen
+- how to write those findings without sync/API/database language
+
+## Exact AI Insertion Point
+
+AI should run only after all of these are true:
+
+1. The importer and deterministic engine have produced normalized summaries and `tested_insight` rows.
+2. Each insight has answer, evidence, sample size, date range, confidence, limitations, and next step.
+3. `tools/build_ai_context_bundle.py` has built a compact bundle from `analysis_results` and coverage tables.
+4. The user explicitly taps a future "Generate analysis" action or enables an analysis run.
+
+AI should not run:
+
+- during sync
+- during import
+- while calculating correlations
+- on raw CSV, raw JSON payloads, GPX routes, images, scans, or API logs
+- on the main UI render path
+
+This keeps the app deterministic first and makes AI a reviewer/explainer.
 
 The fuller module and UI design is in `docs/personal-analytics-architecture.md`.
 
 ## What AI May Receive
 
-AI may receive a compact `AiHealthSummary` built from local tables:
+AI may receive a compact `AI Context Bundle` built from local tables:
 
 - profile basics approved by the user
 - data coverage by source
@@ -67,6 +96,30 @@ AI must not receive:
 - API keys
 - unreviewed OCR text
 
+## Output Contract
+
+AI output should be structured, not a long chatty paragraph:
+
+```json
+{
+  "topFindings": [
+    {
+      "title": "short human title",
+      "message": "plain Polish explanation",
+      "confidence": "High|Medium|Low|Insufficient",
+      "whyItMatters": "what the user can learn from it",
+      "doNotOverclaim": "what this does not prove"
+    }
+  ],
+  "whatChanged": [],
+  "whatIsWeak": [],
+  "nextTests": [],
+  "mainScreenCopy": []
+}
+```
+
+The app should store AI outputs separately from deterministic `analysis_results`, with provider, model, input bundle hash, generated date, and user-visible text. Do not overwrite deterministic insights.
+
 ## Source Difference Rule
 
 Mi Fitness export is currently rich historical data. Health Connect is currently a sparse live source.
@@ -81,7 +134,7 @@ AI reports must mention when a conclusion is based mostly on historical export a
 
 ## UI Placement
 
-The main AI surface should be the `Analiza` tab:
+The first AI surface should be a human report area, not a technical tab:
 
 - personal body report
 - sleep/activity relationships
@@ -106,8 +159,10 @@ The main AI surface should be the `Analiza` tab:
 
 1. Build detailed analytical tables and import audits.
 2. Build deterministic feature summaries from those tables.
-3. Build `AiHealthSummary`.
+3. Build `AI Context Bundle`.
 4. Add a local prompt builder.
-5. Add DeepSeek provider adapter.
-6. Add user consent and a manual "Generate analysis" action.
-7. Show AI output in `Analiza`, with limitations and source coverage.
+5. Add tests proving raw payloads/routes do not enter the bundle.
+6. Add DeepSeek provider adapter.
+7. Add user consent and a manual "Generate analysis" action.
+8. Store AI output with bundle hash and generated date.
+9. Show AI output in the human report area, with limitations and source coverage.
