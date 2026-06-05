@@ -260,4 +260,73 @@ interface DailySummaryDao {
         """
     )
     suspend fun latestWeight(): DailyBodySummaryEntity?
+
+    @Query(
+        """
+        SELECT
+            substr(date, 1, 7) AS period,
+            COUNT(*) AS sleepDays,
+            AVG(totalSleepMinutes) AS avgTotalSleepMinutes,
+            AVG(deepSleepMinutes) AS avgDeepSleepMinutes,
+            AVG(lightSleepMinutes) AS avgLightSleepMinutes,
+            AVG(remSleepMinutes) AS avgRemSleepMinutes,
+            AVG(awakeMinutes) AS avgAwakeMinutes,
+            AVG(sleepScore) AS avgSleepScore
+        FROM sleep_details
+        WHERE totalSleepMinutes > 0
+        GROUP BY substr(date, 1, 7)
+        ORDER BY period DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun monthlySleepPhases(limit: Int): List<MonthlySleepPhaseAggregate>
+
+    @Query(
+        """
+        SELECT
+            s.date AS date,
+            a.steps AS steps,
+            a.distanceMeters AS distanceMeters,
+            a.activeCaloriesKcal AS activeCaloriesKcal,
+            s.totalSleepMinutes AS totalSleepMinutes,
+            s.deepSleepMinutes AS deepSleepMinutes,
+            s.lightSleepMinutes AS lightSleepMinutes,
+            s.remSleepMinutes AS remSleepMinutes,
+            s.awakeMinutes AS awakeMinutes,
+            s.sleepScore AS sleepScore
+        FROM sleep_details s
+        INNER JOIN daily_activity_summaries a ON a.date = s.date
+        WHERE s.totalSleepMinutes > 0
+          AND (a.steps > 0 OR a.distanceMeters > 0 OR a.activeCaloriesKcal > 0)
+        ORDER BY s.date DESC
+        """
+    )
+    suspend fun sleepActivityFeatureRows(): List<SleepActivityFeatureRow>
+
+    @Query(
+        """
+        SELECT
+            substr(date, 1, 7) AS period,
+            workoutType AS workoutType,
+            COUNT(*) AS sessionCount,
+            COALESCE(SUM(durationSeconds), 0) AS totalDurationSeconds,
+            COALESCE(SUM(distanceMeters), 0) AS distanceMeters,
+            COALESCE(SUM(activeCaloriesKcal), 0) AS activeCaloriesKcal,
+            SUM(totalCaloriesKcal) AS totalCaloriesKcal,
+            AVG(avgHeartRateBpm) AS avgHeartRateBpm,
+            MAX(maxHeartRateBpm) AS maxHeartRateBpm,
+            AVG(avgPaceSecondsPerKm) AS avgPaceSecondsPerKm,
+            AVG(avgCadence) AS avgCadence,
+            AVG(vo2Max) AS avgVo2Max
+        FROM workout_sessions
+        WHERE workoutType IN (:workoutTypes)
+        GROUP BY substr(date, 1, 7), workoutType
+        ORDER BY period DESC, workoutType ASC
+        LIMIT :limit
+        """
+    )
+    suspend fun monthlyWorkoutSessions(
+        workoutTypes: List<String>,
+        limit: Int,
+    ): List<MonthlyWorkoutSessionAggregate>
 }

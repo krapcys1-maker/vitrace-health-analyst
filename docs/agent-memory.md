@@ -132,6 +132,7 @@ Local Mi Fitness export summary:
 | 2026-06-05 | `vitrace/mvp-foundation` | Reworked domain screens to use internal section switches instead of dumping all cards into long vertical scrolls. | `:app:assembleDebug` passed; APK installed with ADB; screenshots/UI dumps verified Health, Sport, and Options section switches on the phone. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Split Sport into `Kroki`, `Chodzenie`, `Bieganie`, and `Analiza`; added workout-type summaries so walking/running come from training records, not step totals. | `:app:assembleDebug` passed; importer rerun; phone DB updated; UI dumps verified Sport/Kroki, Sport/Chodzenie, and Sport/Bieganie with running 4 sessions and 16.3 km in last 30 days. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Added detailed analytical storage for sleep stages and workout sessions; refocused AI placement as an explanation layer over deterministic `AiHealthSummary`, not over UI cards. | `:app:assembleDebug` passed; importer and audit passed; phone DB verified with 133 sleep detail rows and 303 workout sessions after app launch. |
+| 2026-06-05 | `vitrace/mvp-foundation` | Added first deterministic `AnalysisContextBuilder`: monthly sleep phases, sleep/activity comparison, and monthly walking/running sport trends; surfaced first results in Sleep and Analysis tabs. | `:app:assembleDebug` passed; APK installed; phone UI verified Sleep/Historia, Sleep/Analiza, and Analysis tab with 12 sleep-phase months, 133 sleep+activity days, and 24 sport trend rows. |
 
 ## Update Protocol
 

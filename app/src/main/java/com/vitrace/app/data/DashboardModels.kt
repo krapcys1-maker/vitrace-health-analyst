@@ -51,3 +51,42 @@ data class BodySignalAggregate(
     val vo2Records: Int,
     val spo2Records: Int,
 )
+
+data class MonthlySleepPhaseAggregate(
+    val period: String,
+    val sleepDays: Int,
+    val avgTotalSleepMinutes: Double,
+    val avgDeepSleepMinutes: Double?,
+    val avgLightSleepMinutes: Double?,
+    val avgRemSleepMinutes: Double?,
+    val avgAwakeMinutes: Double?,
+    val avgSleepScore: Double?,
+)
+
+data class SleepActivityFeatureRow(
+    val date: String,
+    val steps: Long,
+    val distanceMeters: Double,
+    val activeCaloriesKcal: Double,
+    val totalSleepMinutes: Long,
+    val deepSleepMinutes: Long?,
+    val lightSleepMinutes: Long?,
+    val remSleepMinutes: Long?,
+    val awakeMinutes: Long?,
+    val sleepScore: Int?,
+)
+
+data class MonthlyWorkoutSessionAggregate(
+    val period: String,
+    val workoutType: String,
+    val sessionCount: Int,
+    val totalDurationSeconds: Long,
+    val distanceMeters: Double,
+    val activeCaloriesKcal: Double,
+    val totalCaloriesKcal: Double?,
+    val avgHeartRateBpm: Double?,
+    val maxHeartRateBpm: Long?,
+    val avgPaceSecondsPerKm: Double?,
+    val avgCadence: Double?,
+    val avgVo2Max: Double?,
+)

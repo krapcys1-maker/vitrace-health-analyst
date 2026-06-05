@@ -45,6 +45,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
 import com.vitrace.app.analysis.AnalysisBlock
+import com.vitrace.app.analysis.AnalysisConfidence
+import com.vitrace.app.analysis.PersonalAnalysisContext
 import com.vitrace.app.analysis.buildVitaTraceAnalysis
 import com.vitrace.app.data.UserProfileEntity
 import com.vitrace.app.health.ActivityWindow
@@ -64,6 +66,7 @@ import com.vitrace.app.health.SportDomainSummary
 import com.vitrace.app.health.WorkoutTypeDaySummary
 import com.vitrace.app.health.WorkoutTypeSummary
 import kotlinx.coroutines.launch
+import kotlin.math.roundToLong
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -163,8 +166,12 @@ private fun HealthConnectScreen() {
             when (selectedTab) {
                 AppTab.Sleep -> SleepTab(
                     summary = diagnostics?.sleepSummary,
+                    analysisContext = diagnostics?.analysisContext,
                 )
-                AppTab.Sport -> SportTab(summary = diagnostics?.sportSummary)
+                AppTab.Sport -> SportTab(
+                    summary = diagnostics?.sportSummary,
+                    analysisContext = diagnostics?.analysisContext,
+                )
                 AppTab.Weight -> WeightTab(summary = diagnostics?.bodySummary)
                 AppTab.Health -> HealthTab(
                     journal = diagnostics?.healthJournal,
@@ -177,6 +184,7 @@ private fun HealthConnectScreen() {
                     sleepSummary = diagnostics?.sleepSummary,
                     sportSummary = diagnostics?.sportSummary,
                     bodySummary = diagnostics?.bodySummary,
+                    analysisContext = diagnostics?.analysisContext,
                 )
                 AppTab.Options -> OptionsTab(
                     diagnostics = diagnostics,
@@ -335,7 +343,10 @@ private fun DashboardTab(
 }
 
 @Composable
-private fun SleepTab(summary: SleepDomainSummary?) {
+private fun SleepTab(
+    summary: SleepDomainSummary?,
+    analysisContext: PersonalAnalysisContext?,
+) {
     var section by remember { mutableStateOf(0) }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SectionTitle("Sen")
@@ -354,16 +365,8 @@ private fun SleepTab(summary: SleepDomainSummary?) {
         )
         when (section) {
             0 -> SleepLatestCard(summary)
-            1 -> SleepMonthlyCard(summary)
-            else -> AnalysisCard(
-                title = "Analiza snu",
-                lines = listOf(
-                    "AI pozniej dostanie agregaty snu, aktywnosci i pulsu",
-                    "najpierw liczymy korelacje lokalnie i pokazujemy pewnosc wniosku",
-                    "nie bedziemy udawac zaleznosci przy zbyt malej probce",
-                ),
-                quality = if (summary.last30SleepDays >= 14) DiagnosticQuality.Good else DiagnosticQuality.Warning,
-            )
+            1 -> SleepMonthlyCard(summary, analysisContext)
+            else -> SleepActivityAnalysisCard(analysisContext)
         }
     }
 }
@@ -406,22 +409,64 @@ private fun SleepLatestCard(summary: SleepDomainSummary) {
 }
 
 @Composable
-private fun SleepMonthlyCard(summary: SleepDomainSummary) {
-    PeriodBarsCard(
-        title = "Sen miesiecznie",
-        rows = summary.recentMonths.map { month ->
-            BarRowData(
-                label = month.period,
-                value = month.averageMinutes,
-                text = "${month.averageMinutes.formatMinutes()} srednio | ${month.sleepDays} dni",
+private fun SleepMonthlyCard(
+    summary: SleepDomainSummary,
+    analysisContext: PersonalAnalysisContext?,
+) {
+    val detailedMonths = analysisContext?.monthlySleepPhases.orEmpty()
+    if (detailedMonths.isEmpty()) {
+        PeriodBarsCard(
+            title = "Sen miesiecznie",
+            rows = summary.recentMonths.map { month ->
+                BarRowData(
+                    label = month.period,
+                    value = month.averageMinutes,
+                    text = "${month.averageMinutes.formatMinutes()} srednio | ${month.sleepDays} dni",
+                )
+            },
+            emptyText = "brak miesiecy snu",
+        )
+        return
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = "Sen miesiecznie - fazy",
+                style = MaterialTheme.typography.titleMedium,
+                color = Color(0xFF0F172A),
+                fontWeight = FontWeight.Bold,
             )
-        },
-        emptyText = "brak miesiecy snu",
-    )
+            detailedMonths.take(6).forEach { month ->
+                HorizontalDivider(color = Color(0xFFE2E8F0))
+                Text(
+                    text = "${month.period} | ${month.sleepDays} nocy",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF0F172A),
+                    fontWeight = FontWeight.SemiBold,
+                )
+                CompactMetricRow("Sen", month.avgTotalSleepMinutes.formatMinutes(), month.sleepDays.qualityForCount())
+                CompactMetricRow("REM", month.avgRemSleepMinutes.phaseText(month.remPercent), month.avgRemSleepMinutes.qualityForNullable())
+                CompactMetricRow("Gleboki", month.avgDeepSleepMinutes.phaseText(month.deepPercent), month.avgDeepSleepMinutes.qualityForNullable())
+                CompactMetricRow("Plytki", month.avgLightSleepMinutes.phaseText(month.lightPercent), month.avgLightSleepMinutes.qualityForNullable())
+                CompactMetricRow("Wynik snu", month.avgSleepScore?.format1() ?: "brak", month.avgSleepScore.qualityForNullable())
+            }
+        }
+    }
 }
 
 @Composable
-private fun SportTab(summary: SportDomainSummary?) {
+private fun SportTab(
+    summary: SportDomainSummary?,
+    analysisContext: PersonalAnalysisContext?,
+) {
     var section by remember { mutableStateOf(0) }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SectionTitle("Sport")
@@ -482,11 +527,12 @@ private fun SportTab(summary: SportDomainSummary?) {
                     lines = listOf(
                         "kroki sa z aktywnosci dziennej",
                         "chodzenie i bieganie sa z treningow, nie z samego licznika krokow",
-                        "dla biegania sprawdzimy tempo, puls, dystans i czas",
-                        "dla chodzenia sprawdzimy objetosc, tempo i obciazenie",
+                        "silnik liczy tempo, puls, dystans, kcal/km i kcal/min",
+                        "AI pozniej tylko wyjasni gotowe wyniki i ograniczenia",
                     ),
                     quality = if (summary.workoutLast30.sessionCount > 0) DiagnosticQuality.Good else DiagnosticQuality.Neutral,
                 )
+                SportTrendAnalysisCard(analysisContext)
             }
         }
     }
@@ -825,6 +871,7 @@ private fun AnalysisTab(
     sleepSummary: SleepDomainSummary?,
     sportSummary: SportDomainSummary?,
     bodySummary: BodyDomainSummary?,
+    analysisContext: PersonalAnalysisContext?,
 ) {
     val report = buildVitaTraceAnalysis(dashboard)
     var section by remember { mutableStateOf(0) }
@@ -848,6 +895,7 @@ private fun AnalysisTab(
                     quality = DiagnosticQuality.Good,
                 )
                 AnalysisCard(report.currentInsight)
+                PersonalAnalysisContextCard(analysisContext)
                 SleepActivityCorrelationCard(sleepSummary = sleepSummary, sportSummary = sportSummary)
             }
             1 -> {
@@ -869,6 +917,101 @@ private fun AnalysisTab(
             else -> LongTermActivitySection(summary = longTermActivity)
         }
     }
+}
+
+@Composable
+private fun PersonalAnalysisContextCard(
+    analysisContext: PersonalAnalysisContext?,
+) {
+    if (analysisContext == null) {
+        AnalysisCard(
+            title = "Silnik analizy",
+            lines = listOf("brak kontekstu analitycznego z lokalnej bazy"),
+            quality = DiagnosticQuality.Warning,
+        )
+        return
+    }
+
+    val comparison = analysisContext.sleepActivityComparison
+    val sportMonths = analysisContext.monthlySportTrends
+    AnalysisCard(
+        title = "Silnik analizy",
+        lines = listOf(
+            "sen/fazy: ${analysisContext.monthlySleepPhases.size} miesiecy",
+            "sen + aktywnosc: ${comparison.totalSampleDays} wspolnych dni",
+            "sport: ${sportMonths.size} miesiecznych trendow chodzenia/biegania",
+            "AI dostanie te wyniki jako AiHealthSummary, nie kafelki z UI",
+        ),
+        quality = if (comparison.confidence == AnalysisConfidence.Insufficient) DiagnosticQuality.Warning else DiagnosticQuality.Good,
+    )
+}
+
+@Composable
+private fun SleepActivityAnalysisCard(
+    analysisContext: PersonalAnalysisContext?,
+) {
+    val comparison = analysisContext?.sleepActivityComparison
+    if (comparison == null || comparison.delta == null || comparison.highActivity == null || comparison.lowerActivity == null) {
+        AnalysisCard(
+            title = "Ruch a sen",
+            lines = listOf(
+                "brak gotowej probki do porownania",
+                "potrzebujemy wspolnych dni snu i aktywnosci",
+            ),
+            quality = DiagnosticQuality.Warning,
+        )
+        return
+    }
+
+    val delta = comparison.delta
+    AnalysisCard(
+        title = "Ruch a sen",
+        lines = listOf(
+            "prog aktywnosci: ${comparison.stepThreshold?.formatWhole() ?: "brak"} krokow",
+            "probka: ${comparison.highActivityDays} aktywniejszych dni vs ${comparison.lowerActivityDays} slabszych dni",
+            "sen lacznie: ${delta.totalSleepMinutes.formatSignedMinutes()}",
+            "REM: ${delta.remSleepPercent.formatSignedPercent()}",
+            "gleboki: ${delta.deepSleepPercent.formatSignedPercent()}",
+            "plytki: ${delta.lightSleepPercent.formatSignedPercent()}",
+            "wynik snu: ${delta.sleepScore.formatSigned1OrMissing()}",
+            "pewnosc: ${comparison.confidence.label()} - ${comparison.interpretation}",
+        ),
+        quality = comparison.confidence.quality(),
+    )
+}
+
+@Composable
+private fun SportTrendAnalysisCard(
+    analysisContext: PersonalAnalysisContext?,
+) {
+    val trends = analysisContext?.monthlySportTrends.orEmpty()
+    if (trends.isEmpty()) {
+        AnalysisCard(
+            title = "Trendy treningow",
+            lines = listOf("brak miesiecznych sesji chodzenia/biegania do analizy"),
+            quality = DiagnosticQuality.Warning,
+        )
+        return
+    }
+
+    val latestRunning = trends.firstOrNull { trend -> trend.workoutType == "running" }
+    val latestWalking = trends.firstOrNull { trend -> trend.workoutType == "walking" }
+    val lines = buildList {
+        latestWalking?.let { trend ->
+            add("chodzenie ${trend.period}: ${trend.distanceKm.format1()} km, ${trend.sessionCount} sesji")
+            add("chodzenie koszt: ${trend.activeCaloriesPerKm.format0OrMissing()} kcal/km | ${trend.activeCaloriesPerMinute.format1OrMissing()} kcal/min")
+        }
+        latestRunning?.let { trend ->
+            add("bieganie ${trend.period}: ${trend.distanceKm.format1()} km, ${trend.sessionCount} sesji")
+            add("bieg: ${trend.avgPaceSecondsPerKm.formatPaceOrMissing()} min/km | puls ${trend.avgHeartRateBpm.format0OrMissing()} bpm")
+        }
+        add("kolejny krok: porownac podobne sesje miesiac do miesiaca")
+    }
+    AnalysisCard(
+        title = "Trendy treningow",
+        lines = lines,
+        quality = DiagnosticQuality.Good,
+    )
 }
 
 @Composable
@@ -1854,11 +1997,21 @@ private fun Double.qualityForPositive(): DiagnosticQuality {
     return if (this > 0.0) DiagnosticQuality.Good else DiagnosticQuality.Warning
 }
 
-private fun Double.format0(): String = "%,.0f".format(this)
+private fun Double?.qualityForNullable(): DiagnosticQuality {
+    return if (this == null) DiagnosticQuality.Warning else DiagnosticQuality.Good
+}
+
+private fun Double.format0(): String = roundToLong().formatWhole()
 
 private fun Double.format1(): String = "%,.1f".format(this)
 
-private fun Long.formatWhole(): String = "%,d".format(this)
+private fun Long.formatWhole(): String {
+    return toString()
+        .reversed()
+        .chunked(3)
+        .joinToString(" ")
+        .reversed()
+}
 
 private fun Long.formatMinutes(): String {
     val hours = this / 60
@@ -1867,6 +2020,62 @@ private fun Long.formatMinutes(): String {
 }
 
 private fun Double.formatMinutes(): String = toLong().formatMinutes()
+
+private fun Double?.phaseText(percent: Double?): String {
+    if (this == null) {
+        return "brak"
+    }
+    val percentText = percent?.let { value -> "${value.format0()}%" } ?: "brak %"
+    return "${formatMinutes()} | $percentText"
+}
+
+private fun Double?.formatSignedPercent(): String {
+    return this?.let { value -> "%+.0f%%".format(value) } ?: "brak"
+}
+
+private fun Double.formatSignedMinutes(): String {
+    return "%+.0f min".format(this)
+}
+
+private fun Double?.formatSigned1OrMissing(): String {
+    return this?.let { value -> "%+.1f".format(value) } ?: "brak"
+}
+
+private fun Double?.format0OrMissing(): String {
+    return this?.format0() ?: "brak"
+}
+
+private fun Double?.format1OrMissing(): String {
+    return this?.format1() ?: "brak"
+}
+
+private fun Double?.formatPaceOrMissing(): String {
+    if (this == null || this <= 0.0) {
+        return "brak"
+    }
+    val totalSeconds = toLong()
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "%d:%02d".format(minutes, seconds)
+}
+
+private fun AnalysisConfidence.label(): String {
+    return when (this) {
+        AnalysisConfidence.Insufficient -> "za mala probka"
+        AnalysisConfidence.Low -> "niska"
+        AnalysisConfidence.Medium -> "srednia"
+        AnalysisConfidence.High -> "wysoka"
+    }
+}
+
+private fun AnalysisConfidence.quality(): DiagnosticQuality {
+    return when (this) {
+        AnalysisConfidence.Insufficient -> DiagnosticQuality.Warning
+        AnalysisConfidence.Low -> DiagnosticQuality.Neutral
+        AnalysisConfidence.Medium,
+        AnalysisConfidence.High -> DiagnosticQuality.Good
+    }
+}
 
 private fun DataQualityItem.statusLabel(): String {
     return when {

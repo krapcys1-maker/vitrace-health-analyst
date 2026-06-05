@@ -288,3 +288,22 @@ First outputs:
   - kcal/km and kcal/min trend
 
 Only after this exists should the DeepSeek prompt receive an `AiHealthSummary`.
+
+## Additional High-Value Ideas
+
+These are worth adding after the first deterministic context is stable:
+
+- sleep debt: last 7/14/30 days versus the user's normal sleep baseline
+- best activity window for sleep: step range or workout load where sleep score/deep sleep is best
+- late workout effect: evening training versus sleep phases and sleep score
+- recovery after poor sleep: whether next-day heart rate, pace, or activity changes after short sleep
+- fatigue signal: same pace/distance with higher heart rate than baseline
+- cardio improvement signal: same pace/distance with lower heart rate than baseline
+- walking efficiency: heart rate and kcal/km at similar walking distances
+- running efficiency: pace, heart rate, cadence, VO2 max, kcal/km, and kcal/min over comparable runs
+- calorie cost trend: whether kcal/km and kcal/min are rising or falling for similar sessions
+- consistency score: how stable sleep time, activity, and training load are week to week
+- anomaly days: days where sleep, heart rate, or training cost is far from personal baseline
+- source reliability score: whether a conclusion is mostly from rich historical Mi Fitness data or sparse Health Connect live data
+- future body composition links: fat/muscle/weight versus sleep phases, resting heart rate, workout heart rate, and calorie cost
+- notes correlation: subjective bad/good days versus sleep, activity, heart rate, and training load

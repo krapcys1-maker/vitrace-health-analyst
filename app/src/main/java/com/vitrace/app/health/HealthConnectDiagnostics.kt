@@ -1,5 +1,6 @@
 package com.vitrace.app.health
 
+import com.vitrace.app.analysis.PersonalAnalysisContext
 import com.vitrace.app.data.UserProfileEntity
 
 data class HealthConnectDiagnostics(
@@ -16,6 +17,7 @@ data class HealthConnectDiagnostics(
     val sportSummary: SportDomainSummary? = null,
     val bodySummary: BodyDomainSummary? = null,
     val healthJournal: HealthJournalSummary? = null,
+    val analysisContext: PersonalAnalysisContext? = null,
     val savedSnapshotCount: Int = 0,
     val dailySyncSummary: DailySyncSummary? = null,
     val error: String? = null,

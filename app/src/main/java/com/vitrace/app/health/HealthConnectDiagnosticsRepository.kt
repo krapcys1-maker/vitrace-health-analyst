@@ -16,6 +16,7 @@ import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
+import com.vitrace.app.analysis.AnalysisContextBuilder
 import com.vitrace.app.data.DailyActivitySummaryEntity
 import com.vitrace.app.data.DailyBodySummaryEntity
 import com.vitrace.app.data.DailyHeartSummaryEntity
@@ -109,6 +110,7 @@ object HealthConnectDiagnosticsRepository {
                 sportSummary = database.loadSportDomainSummary(profile),
                 bodySummary = database.loadBodyDomainSummary(),
                 healthJournal = database.loadHealthJournalSummary(),
+                analysisContext = AnalysisContextBuilder.build(database, profile),
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
             )
@@ -127,6 +129,7 @@ object HealthConnectDiagnosticsRepository {
                 sportSummary = database.loadSportDomainSummary(profile),
                 bodySummary = database.loadBodyDomainSummary(),
                 healthJournal = database.loadHealthJournalSummary(),
+                analysisContext = AnalysisContextBuilder.build(database, profile),
             )
         }
 
@@ -159,6 +162,7 @@ object HealthConnectDiagnosticsRepository {
                 sportSummary = database.loadSportDomainSummary(profile),
                 bodySummary = database.loadBodyDomainSummary(),
                 healthJournal = database.loadHealthJournalSummary(),
+                analysisContext = AnalysisContextBuilder.build(database, profile),
             )
         }
 
@@ -199,6 +203,7 @@ object HealthConnectDiagnosticsRepository {
                 sportSummary = database.loadSportDomainSummary(profile),
                 bodySummary = database.loadBodyDomainSummary(),
                 healthJournal = database.loadHealthJournalSummary(),
+                analysisContext = AnalysisContextBuilder.build(database, profile),
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
             )
@@ -217,6 +222,7 @@ object HealthConnectDiagnosticsRepository {
                 sportSummary = database.loadSportDomainSummary(profile),
                 bodySummary = database.loadBodyDomainSummary(),
                 healthJournal = database.loadHealthJournalSummary(),
+                analysisContext = AnalysisContextBuilder.build(database, profile),
                 error = error.toUserMessage(),
             )
         }
