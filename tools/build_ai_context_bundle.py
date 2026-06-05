@@ -11,8 +11,10 @@ from pathlib import Path
 from typing import Any
 
 from analysis_rules import (
+    CREDIBLE_DAILY_HEART_FILTER_SQL,
     CREDIBLE_WALKING_FILTER_SQL,
     FITNESS_WALKING_FILTER_SQL,
+    HEART_MIN_DAILY_SAMPLES,
     LONG_WALK_SLEEP_MIN_DISTANCE_KM,
     ActivityMonth,
     classify_activity_months,
@@ -112,7 +114,7 @@ def data_coverage(con: sqlite3.Connection, generated_for_date: str) -> dict[str,
     return {
         "activityDays": scalar(con, "select count(*) from daily_activity_summaries where date < ? and (steps > 0 or distanceMeters > 0 or activeCaloriesKcal > 0)", generated_for_date),
         "sleepDetailNights": scalar(con, "select count(*) from sleep_details where date < ? and totalSleepMinutes > 0", generated_for_date),
-        "heartDays": scalar(con, "select count(*) from daily_heart_summaries where date < ? and sampleCount > 0 and avgBpm is not null", generated_for_date),
+        "heartDays": scalar(con, f"select count(*) from daily_heart_summaries where date < ? and {CREDIBLE_DAILY_HEART_FILTER_SQL}", generated_for_date),
         "walkingSessions": scalar(con, "select count(*) from workout_sessions where date < ? and workoutType = 'walking'", generated_for_date),
         "runningSessions": scalar(con, "select count(*) from workout_sessions where date < ? and workoutType = 'running'", generated_for_date),
         "bodyWeightDays": scalar(con, "select count(*) from daily_body_summaries where date < ? and weightRecordCount > 0", generated_for_date),
@@ -179,6 +181,7 @@ def deterministic_engine_facts(
         "activityOverTime": activity_over_time_facts(con, generated_for_date, steps_per_km),
         "walkingFitness": walking_fitness_facts(con, generated_for_date),
         "sleepAfterLongWalks": sleep_after_long_walks_facts(con, generated_for_date),
+        "heartLoad": heart_load_facts(con, generated_for_date),
     }
 
 
@@ -413,6 +416,82 @@ def rounded_average(rows: list[sqlite3.Row], key: str) -> float | None:
     if not values:
         return None
     return round(sum(values) / len(values), 1)
+
+
+def heart_load_facts(con: sqlite3.Connection, generated_for_date: str) -> dict[str, Any]:
+    try:
+        total_days = scalar(
+            con,
+            "select count(*) from daily_heart_summaries where date < ? and sampleCount > 0 and avgBpm is not null",
+            generated_for_date,
+        )
+        rows = list(
+            con.execute(
+                f"""
+                select h.date as date,
+                       h.avgBpm as avgBpm,
+                       h.sampleCount as sampleCount,
+                       coalesce(a.steps, 0) as steps,
+                       s.totalSleepMinutes as totalSleepMinutes,
+                       coalesce(w.totalDurationMinutes, 0) as workoutMinutes
+                from daily_heart_summaries h
+                left join daily_activity_summaries a on a.date = h.date
+                left join sleep_details s on s.date = h.date
+                left join daily_workout_summaries w on w.date = h.date
+                where h.date < ? and {CREDIBLE_DAILY_HEART_FILTER_SQL}
+                """,
+                (generated_for_date,),
+            )
+        )
+    except sqlite3.OperationalError:
+        return {"available": False, "reason": "heart table unavailable"}
+
+    values = [float(row["avgBpm"]) for row in rows if row["avgBpm"] is not None]
+    baseline = round(sum(values) / len(values), 1) if values else None
+    std_dev = standard_deviation(values)
+    threshold = round(baseline + std_dev, 1) if baseline is not None and std_dev is not None else None
+    high_rows = [row for row in rows if threshold is not None and float(row["avgBpm"]) >= threshold]
+    normal_rows = [row for row in rows if threshold is not None and float(row["avgBpm"]) < threshold]
+    high = heart_group(high_rows)
+    normal = heart_group(normal_rows)
+
+    return {
+        "available": bool(rows),
+        "closedDayRule": f"uses dates before {generated_for_date}",
+        "filter": f"sampleCount >= {HEART_MIN_DAILY_SAMPLES}, avgBpm 35-220",
+        "totalHeartDays": total_days,
+        "credibleHeartDays": len(rows),
+        "excludedLowCoverageDays": max(total_days - len(rows), 0),
+        "baselineAvgBpm": baseline,
+        "highDayThresholdAvgBpm": threshold,
+        "highAvgHeartDays": high,
+        "otherHeartDays": normal,
+        "delta": {
+            "sleepMinutes": numeric_delta(high.get("totalSleepMinutes"), normal.get("totalSleepMinutes")),
+            "steps": numeric_delta(high.get("steps"), normal.get("steps")),
+            "workoutMinutes": numeric_delta(high.get("workoutMinutes"), normal.get("workoutMinutes")),
+        },
+        "interpretationGuard": "daily average HR only; not resting HR and not diagnosis",
+    }
+
+
+def heart_group(rows: list[sqlite3.Row]) -> dict[str, Any]:
+    return {
+        "days": len(rows),
+        "avgBpm": rounded_average(rows, "avgBpm"),
+        "avgSamples": rounded_average(rows, "sampleCount"),
+        "totalSleepMinutes": rounded_average(rows, "totalSleepMinutes"),
+        "steps": rounded_average(rows, "steps"),
+        "workoutMinutes": rounded_average(rows, "workoutMinutes"),
+    }
+
+
+def standard_deviation(values: list[float]) -> float | None:
+    if len(values) < 2:
+        return None
+    mean = sum(values) / len(values)
+    variance = sum((value - mean) ** 2 for value in values) / len(values)
+    return variance ** 0.5
 
 
 def research_rules() -> dict[str, list[str]]:

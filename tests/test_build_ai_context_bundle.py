@@ -62,6 +62,11 @@ class BuildAiContextBundleCliTest(unittest.TestCase):
         self.assertEqual(sleep_after_walks["longWalkSleep"]["days"], 1)
         self.assertEqual(sleep_after_walks["normalSleep"]["days"], 1)
         self.assertEqual(sleep_after_walks["delta"]["totalSleepMinutes"], -30.0)
+        heart_load = bundle["engineFacts"]["heartLoad"]
+        self.assertEqual(heart_load["totalHeartDays"], 2)
+        self.assertEqual(heart_load["credibleHeartDays"], 1)
+        self.assertEqual(heart_load["excludedLowCoverageDays"], 1)
+        self.assertNotIn("190.0", json.dumps(heart_load, ensure_ascii=True))
         self.assertIn("2026-06-05 as partial", bundle["source"]["closedDayRule"])
         self.assertIn("Do not diagnose", prompt)
         self.assertIn("Do not mention sync", prompt)
@@ -145,6 +150,15 @@ def create_fixture_db(db_path: Path) -> None:
                 minBpm INTEGER,
                 maxBpm INTEGER,
                 avgBpm REAL,
+                source TEXT NOT NULL,
+                lastRecordAtEpochMs INTEGER,
+                syncedAtEpochMs INTEGER NOT NULL
+            );
+
+            CREATE TABLE daily_workout_summaries (
+                date TEXT NOT NULL PRIMARY KEY,
+                sessionCount INTEGER NOT NULL,
+                totalDurationMinutes INTEGER NOT NULL,
                 source TEXT NOT NULL,
                 lastRecordAtEpochMs INTEGER,
                 syncedAtEpochMs INTEGER NOT NULL
@@ -247,12 +261,16 @@ def create_fixture_db(db_path: Path) -> None:
                 ("2026-06-02", 400, 50, 270, 70, 68),
             ],
         )
-        con.execute(
+        con.executemany(
             """
             INSERT INTO daily_heart_summaries
             (date, sampleCount, minBpm, maxBpm, avgBpm, source, lastRecordAtEpochMs, syncedAtEpochMs)
-            VALUES ('2026-06-01', 100, 60, 140, 85.0, 'fixture', NULL, 1)
-            """
+            VALUES (?, ?, ?, ?, ?, 'fixture', NULL, 1)
+            """,
+            [
+                ("2026-06-01", 100, 60, 140, 85.0),
+                ("2026-06-02", 1, 180, 200, 190.0),
+            ],
         )
         con.execute(
             """

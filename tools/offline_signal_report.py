@@ -10,7 +10,11 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
-from analysis_rules import CREDIBLE_WALKING_FILTER_SQL
+from analysis_rules import (
+    CREDIBLE_DAILY_HEART_FILTER_SQL,
+    CREDIBLE_WALKING_FILTER_SQL,
+    HEART_MIN_DAILY_SAMPLES,
+)
 
 
 DEFAULT_DB = Path("build/phone-db-check/vitrace-after-am-start.db")
@@ -355,7 +359,7 @@ def walking_section(con: sqlite3.Connection, cutoff_date: str) -> list[str]:
 def heart_context_section(con: sqlite3.Connection, cutoff_date: str) -> list[str]:
     rows = list(
         con.execute(
-            """
+            f"""
             SELECT
                 h.date AS date,
                 h.avgBpm AS avgBpm,
@@ -370,7 +374,7 @@ def heart_context_section(con: sqlite3.Connection, cutoff_date: str) -> list[str
             LEFT JOIN daily_activity_summaries a ON a.date = h.date
             LEFT JOIN sleep_details s ON s.date = h.date
             LEFT JOIN daily_workout_summaries w ON w.date = h.date
-            WHERE h.date < ? AND h.sampleCount > 0 AND h.avgBpm IS NOT NULL
+            WHERE h.date < ? AND {CREDIBLE_DAILY_HEART_FILTER_SQL}
             ORDER BY h.date
             """,
             (cutoff_date,),
@@ -386,7 +390,8 @@ def heart_context_section(con: sqlite3.Connection, cutoff_date: str) -> list[str
     lines = [
         "## Heart Context",
         "",
-        f"- Closed heart days: {len(rows)}",
+        f"- Closed credible heart days: {len(rows)}",
+        f"- Heart-day filter: at least {HEART_MIN_DAILY_SAMPLES} samples and credible average HR",
         f"- Average daily HR baseline: {fmt0(baseline)} bpm",
         f"- High-day threshold: {fmt0(threshold)} bpm",
         "",

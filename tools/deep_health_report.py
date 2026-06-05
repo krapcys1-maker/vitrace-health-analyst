@@ -11,7 +11,9 @@ from pathlib import Path
 
 from analysis_rules import (
     CREDIBLE_WALKING_FILTER_SQL,
+    CREDIBLE_DAILY_HEART_FILTER_SQL,
     FITNESS_WALKING_FILTER_SQL,
+    HEART_MIN_DAILY_SAMPLES,
     LONG_WALK_SLEEP_MIN_DISTANCE_KM,
     ActivityMonth,
     ActivityMonthSignal,
@@ -216,7 +218,7 @@ def coverage_section(coverage: dict[str, object]) -> list[str]:
         f"| Kroki i dystans dzienny | {coverage['activity_days']} dni | najmocniejszy fundament do trendow rocznych/miesiecznych |",
         f"| Chodzenie treningowe | {coverage['walking_sessions']} sesji | najlepsze miejsce do analizy kondycji, tempa, HR i kcal/km |",
         f"| Sen szczegolowy | {coverage['sleep_nights']} nocy | dobry do baseline, ale nie do mocnych tez dzien po dniu bez ostroznosci |",
-        f"| Puls dzienny | {coverage['heart_days']} dni | przydatny jako sygnal obciazenia, ale nie jako odpoczynek/resting HR |",
+        f"| Puls dzienny | {coverage['heart_days']} wiarygodnych dni | przydatny jako sygnal obciazenia, ale nie jako odpoczynek/resting HR |",
         f"| Bieganie | {coverage['running_sessions']} sesji | za malo do trendu, wystarczy do listy i obserwacji |",
         f"| Waga/body composition | {coverage['body_days']} dni | za malo, nie budowac jeszcze wnioskow |",
         "",
@@ -421,7 +423,8 @@ def heart_section(heart: dict[str, object]) -> list[str]:
     lines = [
         "## Puls: uzywac jako sygnalu obciazenia, nie jako diagnozy",
         "",
-        f"- Dni z pulsem: {heart['days']}",
+        f"- Wiarygodne dni z pulsem: {heart['days']} / {heart['total_days']} (min. {heart['min_samples']} probki/dzien)",
+        f"- Odrzucone dni z za mala liczba probek: {heart['excluded_days']}",
         f"- Sredni dzienny baseline: {fmt1(heart['baseline'])} bpm",
         f"- Prog wysokiego dnia: {fmt1(heart['threshold'])} bpm",
         "",
@@ -482,7 +485,7 @@ def data_coverage(con: sqlite3.Connection, cutoff_date: str) -> dict[str, int]:
     return {
         "activity_days": scalar(con, "select count(*) from daily_activity_summaries where date < ? and (steps > 0 or distanceMeters > 0 or activeCaloriesKcal > 0)", cutoff_date),
         "sleep_nights": scalar(con, "select count(*) from sleep_details where date < ? and totalSleepMinutes > 0", cutoff_date),
-        "heart_days": scalar(con, "select count(*) from daily_heart_summaries where date < ? and sampleCount > 0 and avgBpm is not null", cutoff_date),
+        "heart_days": scalar(con, f"select count(*) from daily_heart_summaries where date < ? and {CREDIBLE_DAILY_HEART_FILTER_SQL}", cutoff_date),
         "walking_sessions": scalar(con, "select count(*) from workout_sessions where date < ? and workoutType = 'walking'", cutoff_date),
         "running_sessions": scalar(con, "select count(*) from workout_sessions where date < ? and workoutType = 'running'", cutoff_date),
         "body_days": scalar(con, "select count(*) from daily_body_summaries where date < ? and weightRecordCount > 0", cutoff_date),
@@ -723,16 +726,21 @@ def sleep_after_long_walks(con: sqlite3.Connection, cutoff_date: str) -> dict[st
 
 
 def heart_context(con: sqlite3.Connection, cutoff_date: str) -> dict[str, object]:
+    total_days = scalar(
+        con,
+        "select count(*) from daily_heart_summaries where date < ? and sampleCount > 0 and avgBpm is not null",
+        cutoff_date,
+    )
     rows = list(con.execute(
-        """
+        f"""
         select h.date, h.avgBpm as hr, coalesce(a.steps, 0) as steps,
-               s.totalSleepMinutes as sleep,
+               h.sampleCount as samples, s.totalSleepMinutes as sleep,
                coalesce(w.totalDurationMinutes, 0) as workout
         from daily_heart_summaries h
         left join daily_activity_summaries a on a.date = h.date
         left join sleep_details s on s.date = h.date
         left join daily_workout_summaries w on w.date = h.date
-        where h.date < ? and h.sampleCount > 0 and h.avgBpm is not null
+        where h.date < ? and {CREDIBLE_DAILY_HEART_FILTER_SQL}
         """,
         (cutoff_date,),
     ))
@@ -744,6 +752,9 @@ def heart_context(con: sqlite3.Connection, cutoff_date: str) -> dict[str, object
     normal_rows = [row for row in rows if threshold is not None and row["hr"] < threshold]
     return {
         "days": len(rows),
+        "total_days": total_days,
+        "excluded_days": max(total_days - len(rows), 0),
+        "min_samples": HEART_MIN_DAILY_SAMPLES,
         "baseline": baseline,
         "threshold": threshold,
         "high": aggregate_heart_group(high_rows),

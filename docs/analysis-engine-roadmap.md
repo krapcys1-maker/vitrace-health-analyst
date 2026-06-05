@@ -122,6 +122,7 @@ Inputs:
 
 Outputs:
 
+- credible heart-day filter by sample count and sane average-HR range
 - high average-HR days versus baseline
 - context: sleep, steps, workout minutes
 - exercise HR by comparable workout type/distance

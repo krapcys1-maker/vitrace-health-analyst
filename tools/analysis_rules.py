@@ -21,6 +21,13 @@ and avgPaceSecondsPerKm between 480 and 1500
 """.strip()
 
 LONG_WALK_SLEEP_MIN_DISTANCE_KM = 8.0
+HEART_MIN_DAILY_SAMPLES = 24
+
+CREDIBLE_DAILY_HEART_FILTER_SQL = f"""
+sampleCount >= {HEART_MIN_DAILY_SAMPLES}
+and avgBpm is not null
+and avgBpm between 35 and 220
+""".strip()
 
 
 @dataclass(frozen=True)
