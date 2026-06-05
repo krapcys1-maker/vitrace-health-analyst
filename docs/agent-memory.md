@@ -71,6 +71,7 @@ Local Mi Fitness export summary:
 - Domain tabs should not dump every card into one long scroll. Each domain should use internal sections, for example `Przeglad / Historia / Analiza`, so the user manages one focused view at a time.
 - Sport must keep `Kroki` separate from training-derived `Chodzenie` and `Bieganie`. Steps come from daily activity summaries. Walking/running come from Mi Fitness sport records and `daily_workout_type_summaries`.
 - `Zdrowie` now includes a local health journal direction: daily notes, subjective physical/mental state, future lab scans, and AI summaries comparing newest lab results with historical results and daily context.
+- Course correction from 2026-06-05: daily aggregate tables are not enough for the product goal. They are useful for fast totals and UI checks, especially yearly/monthly steps and estimated kilometers, but the analytical foundation must preserve rich details first: sleep stages/score/times and individual workout sessions with pace, calories, heart rate, cadence, VO2 max, and GPX references when present. Build detailed analytical tables before expanding UI or AI.
 
 ## Important Local Paths
 
@@ -92,15 +93,15 @@ Local Mi Fitness export summary:
 
 ## Next Recommended Steps
 
-1. Add sample/sanitized CSV fixtures that contain no private health data.
-2. Build parser/importer tests for yearly/monthly step totals and estimated kilometers.
-3. Implement Mi Fitness historical import into the normalized daily summary tables.
-4. Add configurable `stepsPerKm` setting, default `1250`.
-5. Add long-term activity dashboard: years, months, best periods, trend versus previous period.
-6. Add correlation confidence rules before showing sleep/activity/body insights.
-7. Turn Health Connect quality snapshots into a fuller source reliability screen.
-8. Add background sync after foreground sync remains stable.
-9. Add real chart components and source-specific daily rows before deeper source comparison.
+1. Freeze UI expansion and define the analytical data model before adding more screens.
+2. Add detailed Mi Fitness import tables/models for sleep details and individual workout sessions.
+3. Preserve raw/staging payload references so importer mistakes can be fixed without losing source detail.
+4. Add parser/importer tests and audits for sleep stages, sleep score, workout sessions, pace, calories, heart rate, cadence, VO2 max, yearly/monthly step totals, and estimated kilometers.
+5. Re-run the private export import and verify counts manually before trusting analysis.
+6. Keep the useful long-term step/km stats because Mi Fitness does not expose them well.
+7. Only after detailed import is verified, build deterministic analysis context and correlation confidence rules.
+8. Then redesign the UI around insights, with domain tabs as drill-down rather than the product core.
+9. Add AI only after deterministic analytics can produce a compact `AiHealthSummary`.
 
 ## Work Log
 

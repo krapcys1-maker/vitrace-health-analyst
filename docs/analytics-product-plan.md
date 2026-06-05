@@ -286,19 +286,28 @@ AI Body Report:
 Milestone 1:
 
 - historical CSV import
-- raw/staging records
-- daily aggregates
+- raw/staging records that preserve the source JSON/payload, source file, timestamps, provenance, and parser version
+- detailed analytical records before UI summaries:
+  - sleep details with bedtime, wake time, REM, deep sleep, light sleep, awake duration, awake count, and sleep score when present
+  - workout sessions with start/end, type, duration, distance, active calories, total calories, average/min/max heart rate, pace, cadence, training effect, recovery time, VO2 max, and GPX reference when present
+  - daily activity records with canonical steps, distance, active calories, and estimated kilometers
+  - heart daily summaries and later sample-level or compressed heart series where useful
+- daily aggregates generated from detailed records, not treated as the only source
 - yearly/monthly step totals
 - estimated km using `stepsPerKm`
-- basic dashboard
-- data quality screen
+- data quality/audit screen
+- only a minimal dashboard needed to verify import correctness
 
 Milestone 2:
 
-- baseline engine
-- rolling 7/30/90-day trends
+- importer tests and audits for detailed records:
+  - yearly/monthly/day step totals
+  - sleep stages and sleep score counts
+  - workout session counts and key metrics
+  - running/walking separation
+  - estimated kilometers
+- baseline engine and rolling 7/30/90-day trends
 - yearly/monthly comparisons
-- step/sleep/heart aggregation
 
 Milestone 3:
 

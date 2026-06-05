@@ -25,7 +25,17 @@ These files must stay private unless a small fake/sanitized fixture is created e
 
 ## Target Import Shape
 
-Historical import should write into the same normalized daily tables that Health Connect now uses:
+Historical import must preserve rich source detail first, then generate daily summaries for fast dashboard screens.
+
+Detailed local tables should include:
+
+- raw/staging records with source file, source key, timestamp, payload JSON, parser version, and import time
+- sleep details with date, bedtime, wake time, total minutes, deep/light/REM/awake minutes, awake count, sleep score, source, and raw record reference
+- workout sessions with date, sport type, start/end, duration, distance, active calories, total calories, min/avg/max heart rate, pace, cadence, training effect, recovery time, VO2 max, GPX reference, source, and raw record reference
+- daily activity records with canonical steps, distance, active calories, and estimated kilometers
+- daily heart summaries, with sample-level or compressed heart series added later only if needed for an actual analysis feature
+
+Daily summary tables remain useful for quick screens:
 
 - `daily_activity_summaries`
 - `daily_heart_summaries`
@@ -33,7 +43,7 @@ Historical import should write into the same normalized daily tables that Health
 - `daily_workout_summaries`
 - `daily_body_summaries`
 
-This keeps dashboard, desktop sync, and future AI summaries independent from the original source format.
+This keeps dashboard, desktop sync, and future AI summaries independent from the original source format without throwing away analytical detail.
 
 ## Import Rules
 
@@ -42,7 +52,8 @@ This keeps dashboard, desktop sync, and future AI summaries independent from the
 - Import into a staging model first.
 - Validate date ranges, units, row counts, and duplicates before writing normalized summaries.
 - Keep source provenance: `MI_FITNESS_EXPORT`, file name, and import timestamp.
-- Prefer daily aggregates for dashboard and AI. Keep raw detail local only if a clear feature needs it.
+- Prefer daily aggregates for dashboard speed only. AI and deterministic analytics must be built from detailed analytical tables and then summarized into an `AiHealthSummary`.
+- Do not discard rich fields just because the first UI does not show them.
 - Do not mix basal/total calories into activity calories. Map historical activity calories conservatively and mark uncertain fields.
 
 ## Next Implementation Step
@@ -50,11 +61,12 @@ This keeps dashboard, desktop sync, and future AI summaries independent from the
 Implementation should happen in stages:
 
 1. Create sanitized sample fixtures with a few fake rows for each supported file shape.
-2. Build JVM parser tests for Mi Fitness CSV and workout metadata.
-3. Add staging tables or staging models that preserve source file, source key, raw timestamp, unit, and parsed value.
-4. Normalize staging rows into the existing daily summary tables.
-5. Run the importer on the private export locally only.
-6. Compare imported aggregates against Mi Fitness visible totals and the existing export profile.
+2. Build parser tests for Mi Fitness CSV sleep, workout, activity, and profile metadata.
+3. Add staging tables or staging models that preserve source file, source key, raw timestamp, unit, parsed value, and raw payload JSON.
+4. Add detailed sleep and workout session tables.
+5. Normalize staging/detail rows into the existing daily summary tables.
+6. Run the importer on the private export locally only.
+7. Compare imported aggregates and detailed counts against Mi Fitness visible totals and the existing export profile.
 
 Current local development importer:
 
@@ -91,7 +103,8 @@ After tests pass, run the importer on the private export and compare:
 
 Workout files:
 
-- session date, duration, distance, calories, average heart rate, cadence -> `daily_workout_summaries`
+- session date, start/end, sport type, duration, distance, active calories, total calories, average/min/max heart rate, cadence, pace, training effect, recovery time, VO2 max, GPX reference -> detailed `workout_sessions`
+- daily totals generated from `workout_sessions` -> `daily_workout_summaries`
 - `sport_type = 1` -> running training summaries.
 - `sport_type = 2` -> walking training summaries.
 - Running and walking training summaries are stored separately from daily step totals.
@@ -103,7 +116,7 @@ Unclear fields must be imported with uncertainty flags or skipped until verified
 
 - `daily_report` + `steps` is the canonical source for daily steps, distance, and activity calories because it matches Mi Fitness app totals after source deduplication.
 - `daily_report` + `heart_rate` is the canonical source for daily average, min, and max heart rate when present.
-- `daily_report` + `sleep` is the canonical source for daily total sleep minutes when present.
+- `daily_report` + `sleep` is the canonical source for daily sleep detail when present: total duration, deep sleep, light sleep, REM, awake duration, awake count, sleep score, bedtime, and wake time.
 - `daily_report` + `spo2` is the canonical source for daily average SpO2 when present.
 - Do not calculate monthly/yearly steps by summing raw `steps` rows from multiple `Sid` values.
 - Example audit: September 2024 raw `Sid` sum was 611,046 steps, but canonical daily reports sum to 325,587 steps, matching Mi Fitness.
