@@ -62,6 +62,7 @@ Local Mi Fitness export summary:
 - Correlation insights require sample size and confidence rules. Do not show claims from fewer than 14 comparable days.
 - User profile currently set in app DB: male, 40 years, 186 cm, 88 kg, `stepsPerKm = 1250`.
 - Health Connect foreground sync must merge with richer historical import rows and must not overwrite history with zero/poorer records.
+- Mi Fitness historical activity totals must use `hlth_center_aggregated_fitness_data.csv` `daily_report/steps`. Raw `hlth_center_fitness_data.csv` step rows across multiple `Sid` values double-count phone and wearable sources.
 
 ## Important Local Paths
 
@@ -108,6 +109,7 @@ Local Mi Fitness export summary:
 | 2026-06-05 | `vitrace/mvp-foundation` | Fixed system bar clipping and redesigned the Data tab from technical Health Connect records into user-facing source coverage cards. | `:app:assembleDebug` passed; APK installed with ADB; bottom of Start, Analysis, and Data verified with screenshots. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Expanded product plan around Personal Body Intelligence, yearly/monthly steps, estimated kilometers, correlation confidence, body composition, VO2 max, and AI summary rules. | Documentation only; no build needed. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Added user profile table, long-term activity summaries, local Mi Fitness history importer, and imported private history into the phone database. | `:app:assembleDebug` passed; importer reported 984 daily rows; APK installed; Start, Analysis, and Profile screenshots verified; Health Connect sync kept imported history intact. |
+| 2026-06-05 | `vitrace/mvp-foundation` | Fixed historical step import to use Mi Fitness daily reports instead of summing raw multi-source step rows. | Importer rerun; September 2024 changed from incorrect 611,046 raw steps to canonical 325,587 steps; phone database updated and Analysis screenshot verified. |
 
 ## Update Protocol
 

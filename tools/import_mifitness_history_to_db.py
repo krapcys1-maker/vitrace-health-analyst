@@ -38,9 +38,10 @@ def main() -> None:
     db_path: Path = args.db
 
     fitness_file = find_one(export_dir, "*hlth_center_fitness_data.csv")
+    aggregated_file = find_one(export_dir, "*hlth_center_aggregated_fitness_data.csv")
     sport_file = find_one(export_dir, "*hlth_center_sport_record.csv")
 
-    aggregates = build_daily_aggregates(fitness_file, sport_file, zone)
+    aggregates = build_daily_aggregates(fitness_file, aggregated_file, sport_file, zone)
     now_ms = int(dt.datetime.now(tz=dt.timezone.utc).timestamp() * 1000)
 
     with sqlite3.connect(db_path) as con:
@@ -68,10 +69,14 @@ def find_one(directory: Path, pattern: str) -> Path:
 
 def build_daily_aggregates(
     fitness_file: Path,
+    aggregated_file: Path,
     sport_file: Path,
     zone: dt.tzinfo,
 ) -> dict[str, dict[str, Any]]:
     daily: dict[str, dict[str, Any]] = collections.defaultdict(new_day)
+    raw_activity_by_day_sid: dict[str, dict[str, dict[str, float]]] = collections.defaultdict(
+        lambda: collections.defaultdict(new_raw_activity)
+    )
 
     with fitness_file.open("r", encoding="utf-8-sig", newline="") as handle:
         for row in csv.DictReader(handle):
@@ -84,9 +89,10 @@ def build_daily_aggregates(
             day = daily[date]
 
             if key == "steps":
-                day["steps"] += int(float(value.get("steps") or 0))
-                day["distanceMeters"] += float(value.get("distance") or 0)
-                day["activeCaloriesKcal"] += float(value.get("calories") or 0)
+                raw = raw_activity_by_day_sid[date][row["Sid"]]
+                raw["steps"] += int(float(value.get("steps") or 0))
+                raw["distanceMeters"] += float(value.get("distance") or 0)
+                raw["activeCaloriesKcal"] += float(value.get("calories") or 0)
             elif key == "heart_rate":
                 bpm = value.get("bpm")
                 if bpm not in (None, ""):
@@ -116,6 +122,8 @@ def build_daily_aggregates(
                     day["spo2Count"] += 1
                     day["bodyLast"] = max(day["bodyLast"] or 0, timestamp)
 
+    apply_aggregated_activity(daily, aggregated_file, zone)
+
     with sport_file.open("r", encoding="utf-8-sig", newline="") as handle:
         for row in csv.DictReader(handle):
             value = parse_json(row.get("Value"))
@@ -139,6 +147,14 @@ def build_daily_aggregates(
     return daily
 
 
+def new_raw_activity() -> dict[str, float]:
+    return {
+        "steps": 0,
+        "distanceMeters": 0.0,
+        "activeCaloriesKcal": 0.0,
+    }
+
+
 def new_day() -> dict[str, Any]:
     return {
         "steps": 0,
@@ -159,6 +175,44 @@ def new_day() -> dict[str, Any]:
         "spo2Count": 0,
         "bodyLast": None,
     }
+
+
+def apply_raw_activity_fallback(
+    daily: dict[str, dict[str, Any]],
+    raw_activity_by_day_sid: dict[str, dict[str, dict[str, float]]],
+) -> None:
+    """Use the strongest single raw source only when no daily report exists yet."""
+    for date, by_sid in raw_activity_by_day_sid.items():
+        if not by_sid:
+            continue
+        best = max(by_sid.values(), key=lambda values: values["steps"])
+        day = daily[date]
+        day["steps"] = int(best["steps"])
+        day["distanceMeters"] = float(best["distanceMeters"])
+        day["activeCaloriesKcal"] = float(best["activeCaloriesKcal"])
+
+
+def apply_aggregated_activity(
+    daily: dict[str, dict[str, Any]],
+    aggregated_file: Path,
+    zone: dt.tzinfo,
+) -> None:
+    """Prefer Mi Fitness daily_report values; they match the app's deduped totals."""
+    with aggregated_file.open("r", encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle):
+            if row["Tag"] != "daily_report" or row["Key"] != "steps":
+                continue
+
+            value = parse_json(row.get("Value"))
+            timestamp = int(row["Time"] or 0)
+            if timestamp <= 0:
+                continue
+
+            date = dt.datetime.fromtimestamp(timestamp, zone).date().isoformat()
+            day = daily[date]
+            day["steps"] = int(float(value.get("steps") or 0))
+            day["distanceMeters"] = float(value.get("distance") or 0)
+            day["activeCaloriesKcal"] = float(value.get("calories") or 0)
 
 
 def parse_json(raw: str | None) -> dict[str, Any]:

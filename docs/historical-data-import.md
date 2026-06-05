@@ -80,9 +80,7 @@ After tests pass, run the importer on the private export and compare:
 
 `hlth_center_fitness_data.csv`:
 
-- `steps` -> `daily_activity_summaries.steps`
-- activity/distance keys, when confidently identified -> `daily_activity_summaries.distanceMeters`
-- active movement calories only -> `daily_activity_summaries.activeCaloriesKcal`
+- raw `steps` records are not summed across `Sid`; they can double-count phone and wearable sources
 - `heart_rate` and resting heart keys -> `daily_heart_summaries`
 - `watch_night_sleep` and related sleep keys -> `daily_sleep_summaries`
 - `weight` -> `daily_body_summaries.latestWeightKg`
@@ -95,6 +93,12 @@ Workout files:
 - GPX paths remain local route detail and should not be sent to AI.
 
 Unclear fields must be imported with uncertainty flags or skipped until verified.
+
+`hlth_center_aggregated_fitness_data.csv`:
+
+- `daily_report` + `steps` is the canonical source for daily steps, distance, and activity calories because it matches Mi Fitness app totals after source deduplication.
+- Do not calculate monthly/yearly steps by summing raw `steps` rows from multiple `Sid` values.
+- Example audit: September 2024 raw `Sid` sum was 611,046 steps, but canonical daily reports sum to 325,587 steps, matching Mi Fitness.
 
 ## Analytics Outputs From History
 
