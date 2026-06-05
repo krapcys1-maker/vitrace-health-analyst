@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from statistics import median
 
 
+WALKING_DISTANCE_BANDS = ("1-3 km", "3-6 km", "6-10 km", "10-15 km", "15+ km")
+
 CREDIBLE_WALKING_FILTER_SQL = """
 workoutType = 'walking'
 and distanceMeters >= 1000
@@ -55,6 +57,31 @@ class WalkingFilterDecision:
     accepted: bool
     distance_band: str | None
     reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class WalkingBandYear:
+    period: str
+    distance_band: str
+    sessions: int
+    km: float | None
+    pace_seconds_per_km: float | None
+    avg_heart_rate_bpm: float | None
+    kcal_per_km: float | None
+    vo2: float | None = None
+
+
+@dataclass(frozen=True)
+class WalkingBandTrend:
+    distance_band: str
+    current: WalkingBandYear
+    previous: WalkingBandYear | None
+    confidence: str
+    pace_seconds_per_km_delta: float | None
+    avg_heart_rate_bpm_delta: float | None
+    kcal_per_km_delta: float | None
+    vo2_delta: float | None
+    interpretation: str
 
 
 def classify_activity_months(
@@ -186,3 +213,159 @@ def walking_distance_band(distance_meters: float) -> str:
     if km < 15:
         return "10-15 km"
     return "15+ km"
+
+
+def compare_latest_walking_band_years(
+    rows: list[object],
+    *,
+    min_current_sessions: int = 3,
+    min_previous_sessions: int = 8,
+) -> list[WalkingBandTrend]:
+    """Compare latest available year to previous year inside each walking band."""
+
+    by_band: dict[str, list[WalkingBandYear]] = {band: [] for band in WALKING_DISTANCE_BANDS}
+    for row in rows:
+        band_year = walking_band_year_from_row(row)
+        by_band.setdefault(band_year.distance_band, []).append(band_year)
+
+    trends: list[WalkingBandTrend] = []
+    for band in WALKING_DISTANCE_BANDS:
+        years = sorted(by_band.get(band, []), key=lambda item: item.period)
+        if not years:
+            continue
+        current = years[-1]
+        previous = years[-2] if len(years) >= 2 else None
+        deltas = walking_band_deltas(current, previous)
+        confidence = walking_band_confidence(
+            current,
+            previous,
+            min_current_sessions=min_current_sessions,
+            min_previous_sessions=min_previous_sessions,
+        )
+        trends.append(
+            WalkingBandTrend(
+                distance_band=band,
+                current=current,
+                previous=previous,
+                confidence=confidence,
+                pace_seconds_per_km_delta=deltas["pace_seconds_per_km"],
+                avg_heart_rate_bpm_delta=deltas["avg_heart_rate_bpm"],
+                kcal_per_km_delta=deltas["kcal_per_km"],
+                vo2_delta=deltas["vo2"],
+                interpretation=walking_band_interpretation(confidence, deltas),
+            )
+        )
+    return trends
+
+
+def walking_band_year_from_row(row: object) -> WalkingBandYear:
+    return WalkingBandYear(
+        period=str(row_field(row, "period")),
+        distance_band=str(row_field(row, "distance_band")),
+        sessions=int(row_field(row, "sessions") or 0),
+        km=optional_float(row_field(row, "km")),
+        pace_seconds_per_km=optional_float(row_field(row, "pace_seconds_per_km", "paceSecondsPerKm", "pace")),
+        avg_heart_rate_bpm=optional_float(row_field(row, "avg_heart_rate_bpm", "avgHeartRateBpm", "hr")),
+        kcal_per_km=optional_float(row_field(row, "kcal_per_km", "kcalPerKm", "kcal_km")),
+        vo2=optional_float(row_field(row, "vo2")),
+    )
+
+
+def walking_band_deltas(
+    current: WalkingBandYear,
+    previous: WalkingBandYear | None,
+) -> dict[str, float | None]:
+    if previous is None:
+        return {
+            "pace_seconds_per_km": None,
+            "avg_heart_rate_bpm": None,
+            "kcal_per_km": None,
+            "vo2": None,
+        }
+    return {
+        "pace_seconds_per_km": numeric_delta(current.pace_seconds_per_km, previous.pace_seconds_per_km),
+        "avg_heart_rate_bpm": numeric_delta(current.avg_heart_rate_bpm, previous.avg_heart_rate_bpm),
+        "kcal_per_km": numeric_delta(current.kcal_per_km, previous.kcal_per_km),
+        "vo2": numeric_delta(current.vo2, previous.vo2),
+    }
+
+
+def walking_band_confidence(
+    current: WalkingBandYear,
+    previous: WalkingBandYear | None,
+    *,
+    min_current_sessions: int,
+    min_previous_sessions: int,
+) -> str:
+    if previous is None:
+        return "Insufficient"
+    if current.sessions < min_current_sessions or previous.sessions < min_previous_sessions:
+        return "Insufficient"
+    has_core_metrics = (
+        current.pace_seconds_per_km is not None
+        and previous.pace_seconds_per_km is not None
+        and current.avg_heart_rate_bpm is not None
+        and previous.avg_heart_rate_bpm is not None
+        and current.kcal_per_km is not None
+        and previous.kcal_per_km is not None
+    )
+    if not has_core_metrics:
+        return "Low"
+    if current.sessions >= 8 and previous.sessions >= 8:
+        return "High"
+    if current.sessions >= 4 and previous.sessions >= min_previous_sessions:
+        return "Medium"
+    return "Low"
+
+
+def walking_band_interpretation(
+    confidence: str,
+    deltas: dict[str, float | None],
+) -> str:
+    if confidence == "Insufficient":
+        return "za mala probka, pokazac jako obserwacje bez wniosku"
+
+    pace_delta = deltas["pace_seconds_per_km"]
+    heart_delta = deltas["avg_heart_rate_bpm"]
+    kcal_delta = deltas["kcal_per_km"]
+    if pace_delta is None:
+        return "brak tempa, nie da sie uczciwie ocenic wydolnosci"
+
+    heart_delta = heart_delta or 0.0
+    kcal_delta = kcal_delta or 0.0
+    if pace_delta <= -30 and heart_delta <= 0 and kcal_delta <= 0:
+        return "szybciej przy nie wyzszym tetnie i nizszym koszcie - mocny sygnal poprawy"
+    if pace_delta <= -30 and (heart_delta > 0 or kcal_delta > 0):
+        return "szybciej, ale organizm placi wiecej - tempo poprawione kosztem obciazenia"
+    if abs(pace_delta) < 30 and (heart_delta <= -3 or kcal_delta <= -5):
+        return "tempo podobne, ale koszt nizszy - sygnal lepszej ekonomii"
+    if pace_delta >= 30 and (heart_delta >= 3 or kcal_delta >= 5):
+        return "wolniej i drozej dla organizmu - mozliwy spadek formy albo trudniejsze warunki"
+    if pace_delta >= 30:
+        return "wolniej niz poprzednio, ale bez jednoznacznie wyzszego kosztu"
+    return "zmiana mala albo mieszana - obserwowac dalej"
+
+
+def numeric_delta(current: float | None, previous: float | None) -> float | None:
+    if current is None or previous is None:
+        return None
+    return round(current - previous, 1)
+
+
+def optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    return float(value)
+
+
+def row_field(row: object, *names: str) -> object:
+    for name in names:
+        if isinstance(row, dict) and name in row:
+            return row[name]
+        try:
+            return row[name]  # type: ignore[index]
+        except (KeyError, IndexError, TypeError):
+            pass
+        if hasattr(row, name):
+            return getattr(row, name)
+    return None

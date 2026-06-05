@@ -10,14 +10,16 @@ import sys
 from pathlib import Path
 
 from analysis_rules import (
-    CREDIBLE_WALKING_FILTER_SQL,
     CREDIBLE_DAILY_HEART_FILTER_SQL,
+    CREDIBLE_WALKING_FILTER_SQL,
     FITNESS_WALKING_FILTER_SQL,
     HEART_MIN_DAILY_SAMPLES,
     LONG_WALK_SLEEP_MIN_DISTANCE_KM,
     ActivityMonth,
     ActivityMonthSignal,
+    WalkingBandTrend,
     classify_activity_months,
+    compare_latest_walking_band_years,
 )
 
 
@@ -56,6 +58,7 @@ def build_report(con: sqlite3.Connection, db_path: Path, cutoff_date: str) -> st
     sleep_months = sleep_by_month(con, cutoff_date)
     walking_years = credible_walking_by_year(con, cutoff_date)
     fitness_walking_years = fitness_walking_by_year(con, cutoff_date)
+    walking_band_trends = compare_latest_walking_band_years(walking_by_distance_band_year(con, cutoff_date))
     running = running_summary(con, cutoff_date)
     intensity = exercise_intensity_summary(con, cutoff_date)
     sleep_activity = sleep_activity_tests(con, cutoff_date)
@@ -76,10 +79,10 @@ def build_report(con: sqlite3.Connection, db_path: Path, cutoff_date: str) -> st
         "",
     ]
 
-    lines.extend(executive_findings(activity_years, activity_months, walking_years, fitness_walking_years, running, sleep_activity, long_walk_sleep, sleep_windows, heart, steps_per_km))
+    lines.extend(executive_findings(activity_years, activity_months, walking_years, fitness_walking_years, walking_band_trends, running, sleep_activity, long_walk_sleep, sleep_windows, heart, steps_per_km))
     lines.extend(coverage_section(coverage))
     lines.extend(activity_section(activity_years, activity_months, steps_per_km))
-    lines.extend(walking_section(walking_years, fitness_walking_years, intensity))
+    lines.extend(walking_section(walking_years, fitness_walking_years, walking_band_trends, intensity))
     lines.extend(running_section(running))
     lines.extend(sleep_section(sleep_months, sleep_windows, sleep_activity, long_walk_sleep))
     lines.extend(heart_section(heart))
@@ -94,6 +97,7 @@ def executive_findings(
     activity_months: list[sqlite3.Row],
     walking_years: list[sqlite3.Row],
     fitness_walking_years: list[sqlite3.Row],
+    walking_band_trends: list[WalkingBandTrend],
     running: dict[str, object],
     sleep_activity: dict[str, object],
     long_walk_sleep: dict[str, object],
@@ -152,6 +156,17 @@ def executive_findings(
             f"z {pace(walk2024['pace'])} w 2024 do {pace(walk2025['pace'])} w 2025 i {pace(walk2026['pace'])} w 2026. "
             f"Jednoczesnie koszt spada z {fmt1(walk2024['kcal_km'])} do {fmt1(walk2026['kcal_km'])} kcal/km. "
             "To jest bardziej wartosciowe niz sama liczba krokow."
+        )
+
+    strong_band = strongest_walking_band_signal(walking_band_trends)
+    if strong_band:
+        findings.append(
+            f"5a. Po rozbiciu chodzenia na podobne dystanse najlepiej widac `{strong_band.distance_band}`: "
+            f"{strong_band.current.period} vs {strong_band.previous.period if strong_band.previous else 'brak'} daje "
+            f"tempo {fmt_signed_pace(strong_band.pace_seconds_per_km_delta)}, HR "
+            f"{fmt_signed_number(strong_band.avg_heart_rate_bpm_delta)} bpm i kcal/km "
+            f"{fmt_signed_number(strong_band.kcal_per_km_delta)}. "
+            f"Wniosek: {strong_band.interpretation}."
         )
 
     same = sleep_activity["same_day"]
@@ -275,6 +290,7 @@ def activity_section(years: list[sqlite3.Row], months_by_steps: list[sqlite3.Row
 def walking_section(
     walking_years: list[sqlite3.Row],
     fitness_years: list[sqlite3.Row],
+    band_trends: list[WalkingBandTrend],
     intensity: list[sqlite3.Row],
 ) -> list[str]:
     lines = [
@@ -314,6 +330,22 @@ def walking_section(
             f"{fmt1(row['hr'])} | {fmt1(row['kcal_km'])} | {meaning} |"
         )
         previous = row
+    lines.extend([
+        "",
+        "Porownanie pasm dystansu: najnowszy dostepny rok w danym pasmie kontra poprzedni rok. To jest wazniejsze niz jedna srednia ze wszystkich marszow.",
+        "",
+        "| Pasmo | Porownanie | Sesje | Tempo | HR | kcal/km | Pewnosc | Wniosek |",
+        "|---|---|---:|---:|---:|---:|---|---|",
+    ])
+    for trend in band_trends:
+        previous_period = trend.previous.period if trend.previous else "brak"
+        previous_sessions = trend.previous.sessions if trend.previous else 0
+        lines.append(
+            f"| {trend.distance_band} | {trend.current.period} vs {previous_period} | "
+            f"{trend.current.sessions}/{previous_sessions} | {fmt_signed_pace(trend.pace_seconds_per_km_delta)} | "
+            f"{fmt_signed_number(trend.avg_heart_rate_bpm_delta)} | {fmt_signed_number(trend.kcal_per_km_delta)} | "
+            f"{confidence_pl(trend.confidence)} | {trend.interpretation} |"
+        )
     lines.extend([
         "",
         "Wniosek: dla aplikacji to powinien byc osobny modul `wydolnosc chodzenia`: porownuj tylko podobne dystanse, pokazuj tempo + HR + kcal/km, a nie losowe sumy miesieczne.",
@@ -557,6 +589,33 @@ def fitness_walking_by_year(con: sqlite3.Connection, cutoff_date: str) -> list[s
           and {FITNESS_WALKING_FILTER_SQL}
         group by period
         order by period
+        """,
+        (cutoff_date,),
+    ))
+
+
+def walking_by_distance_band_year(con: sqlite3.Connection, cutoff_date: str) -> list[sqlite3.Row]:
+    return list(con.execute(
+        f"""
+        select substr(date, 1, 4) as period,
+               case
+                 when distanceMeters < 3000 then '1-3 km'
+                 when distanceMeters < 6000 then '3-6 km'
+                 when distanceMeters < 10000 then '6-10 km'
+                 when distanceMeters < 15000 then '10-15 km'
+                 else '15+ km'
+               end as distance_band,
+               count(*) as sessions,
+               sum(distanceMeters) / 1000.0 as km,
+               avg(avgPaceSecondsPerKm) as pace_seconds_per_km,
+               avg(avgHeartRateBpm) as avg_heart_rate_bpm,
+               avg(activeCaloriesKcal / nullif(distanceMeters / 1000.0, 0)) as kcal_per_km,
+               avg(vo2Max) as vo2
+        from workout_sessions
+        where date < ?
+          and {CREDIBLE_WALKING_FILTER_SQL}
+        group by period, distance_band
+        order by period, distance_band
         """,
         (cutoff_date,),
     ))
@@ -922,6 +981,27 @@ def sleep_after_walk_row(label: str, row: dict[str, object] | None) -> str:
     )
 
 
+def strongest_walking_band_signal(trends: list[WalkingBandTrend]) -> WalkingBandTrend | None:
+    confidence_weight = {"High": 3.0, "Medium": 2.0, "Low": 1.0, "Insufficient": 0.0}
+    scored: list[tuple[float, WalkingBandTrend]] = []
+    for trend in trends:
+        if trend.previous is None or trend.confidence in {"Insufficient", "Low"}:
+            continue
+        pace_score = abs(trend.pace_seconds_per_km_delta or 0.0) / 60.0
+        heart_score = abs(trend.avg_heart_rate_bpm_delta or 0.0) / 5.0
+        kcal_score = abs(trend.kcal_per_km_delta or 0.0) / 5.0
+        score = confidence_weight.get(trend.confidence, 0.0) + pace_score + heart_score + kcal_score
+        scored.append((score, trend))
+    if scored:
+        return max(scored, key=lambda item: item[0])[1]
+    low_confidence = [
+        trend
+        for trend in trends
+        if trend.previous is not None and trend.confidence == "Low"
+    ]
+    return low_confidence[0] if low_confidence else None
+
+
 def fmt_int(value: float | int | None) -> str:
     return "brak" if value is None else f"{float(value):,.0f}".replace(",", " ")
 
@@ -932,6 +1012,16 @@ def fmt1(value: float | int | None) -> str:
 
 def fmt_signed_pct(value: float | None) -> str:
     return "brak" if value is None else f"{value:+.1f}%"
+
+
+def fmt_signed_number(value: float | int | None) -> str:
+    return "brak" if value is None else f"{float(value):+.1f}"
+
+
+def fmt_signed_pace(value: float | int | None) -> str:
+    if value is None:
+        return "brak"
+    return f"{float(value):+.0f} s/km"
 
 
 def fmt_directional_pct(value: float | None, positive_label: str, negative_label: str) -> str:
@@ -962,6 +1052,15 @@ def pace(seconds_per_km: float | int | None) -> str:
         return "brak"
     seconds = int(round(float(seconds_per_km)))
     return f"{seconds // 60}:{seconds % 60:02d}/km"
+
+
+def confidence_pl(value: str) -> str:
+    return {
+        "High": "wysoka",
+        "Medium": "srednia",
+        "Low": "niska",
+        "Insufficient": "za mala probka",
+    }.get(value, value)
 
 
 if __name__ == "__main__":

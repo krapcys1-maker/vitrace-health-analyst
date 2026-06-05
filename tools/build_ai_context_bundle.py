@@ -17,7 +17,9 @@ from analysis_rules import (
     HEART_MIN_DAILY_SAMPLES,
     LONG_WALK_SLEEP_MIN_DISTANCE_KM,
     ActivityMonth,
+    WalkingBandTrend,
     classify_activity_months,
+    compare_latest_walking_band_years,
 )
 
 
@@ -297,6 +299,31 @@ def walking_fitness_facts(con: sqlite3.Connection, generated_for_date: str) -> d
                 (generated_for_date,),
             )
         )
+        band_rows = list(
+            con.execute(
+                f"""
+                select substr(date, 1, 4) as period,
+                       case
+                         when distanceMeters < 3000 then '1-3 km'
+                         when distanceMeters < 6000 then '3-6 km'
+                         when distanceMeters < 10000 then '6-10 km'
+                         when distanceMeters < 15000 then '10-15 km'
+                         else '15+ km'
+                       end as distance_band,
+                       count(*) as sessions,
+                       sum(distanceMeters) / 1000.0 as km,
+                       avg(avgPaceSecondsPerKm) as pace_seconds_per_km,
+                       avg(avgHeartRateBpm) as avg_heart_rate_bpm,
+                       avg(activeCaloriesKcal / nullif(distanceMeters / 1000.0, 0)) as kcal_per_km,
+                       avg(vo2Max) as vo2
+                from workout_sessions
+                where date < ? and {CREDIBLE_WALKING_FILTER_SQL}
+                group by period, distance_band
+                order by period, distance_band
+                """,
+                (generated_for_date,),
+            )
+        )
     except sqlite3.OperationalError:
         return {"available": False, "reason": "workout tables unavailable"}
 
@@ -320,6 +347,38 @@ def walking_fitness_facts(con: sqlite3.Connection, generated_for_date: str) -> d
         "filter": "walking 3-15 km, duration 10 min - 4 h, pace 8-25 min/km",
         "years": years,
         "latestVsPrevious": walking_delta(latest, previous),
+        "distanceBandTrends": [
+            walking_band_trend_to_dict(trend)
+            for trend in compare_latest_walking_band_years(band_rows)
+        ],
+    }
+
+
+def walking_band_trend_to_dict(trend: WalkingBandTrend) -> dict[str, Any]:
+    return {
+        "distanceBand": trend.distance_band,
+        "current": walking_band_year_to_dict(trend.current),
+        "previous": walking_band_year_to_dict(trend.previous) if trend.previous else None,
+        "confidence": trend.confidence,
+        "deltas": {
+            "paceSecondsPerKm": trend.pace_seconds_per_km_delta,
+            "avgHeartRateBpm": trend.avg_heart_rate_bpm_delta,
+            "kcalPerKm": trend.kcal_per_km_delta,
+            "vo2": trend.vo2_delta,
+        },
+        "interpretation": trend.interpretation,
+    }
+
+
+def walking_band_year_to_dict(year: object) -> dict[str, Any]:
+    return {
+        "period": year.period,
+        "sessions": year.sessions,
+        "km": round(float(year.km), 1) if year.km is not None else None,
+        "paceSecondsPerKm": round(float(year.pace_seconds_per_km), 1) if year.pace_seconds_per_km is not None else None,
+        "avgHeartRateBpm": round(float(year.avg_heart_rate_bpm), 1) if year.avg_heart_rate_bpm is not None else None,
+        "kcalPerKm": round(float(year.kcal_per_km), 1) if year.kcal_per_km is not None else None,
+        "vo2": round(float(year.vo2), 1) if year.vo2 is not None else None,
     }
 
 

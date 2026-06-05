@@ -4,7 +4,9 @@ import unittest
 
 from tools.analysis_rules import (
     ActivityMonth,
+    WalkingBandYear,
     classify_activity_months,
+    compare_latest_walking_band_years,
     evaluate_walking_session,
 )
 
@@ -101,6 +103,48 @@ class WalkingSessionFilterTest(unittest.TestCase):
         self.assertIn("distance_too_short", short_walk.reasons)
         self.assertTrue(credible_but_not_fitness.accepted)
         self.assertEqual(credible_but_not_fitness.distance_band, "1-3 km")
+
+
+class WalkingBandTrendTest(unittest.TestCase):
+    def test_detects_better_walks_inside_same_distance_band(self) -> None:
+        trends = compare_latest_walking_band_years(
+            [
+                WalkingBandYear("2025", "3-6 km", 20, 90.0, 900.0, 108.0, 72.0, 45.0),
+                WalkingBandYear("2026", "3-6 km", 4, 18.0, 780.0, 102.0, 64.0, 45.0),
+            ]
+        )
+
+        trend = trends[0]
+        self.assertEqual(trend.distance_band, "3-6 km")
+        self.assertEqual(trend.confidence, "Medium")
+        self.assertEqual(trend.pace_seconds_per_km_delta, -120.0)
+        self.assertEqual(trend.avg_heart_rate_bpm_delta, -6.0)
+        self.assertIn("sygnal poprawy", trend.interpretation)
+
+    def test_detects_heavier_long_walks(self) -> None:
+        trends = compare_latest_walking_band_years(
+            [
+                WalkingBandYear("2025", "15+ km", 14, 270.0, 790.0, 108.0, 68.0, 46.0),
+                WalkingBandYear("2026", "15+ km", 4, 80.0, 995.0, 114.0, 74.5, 45.0),
+            ]
+        )
+
+        trend = trends[0]
+        self.assertEqual(trend.confidence, "Medium")
+        self.assertEqual(trend.pace_seconds_per_km_delta, 205.0)
+        self.assertEqual(trend.avg_heart_rate_bpm_delta, 6.0)
+        self.assertIn("wolniej i drozej", trend.interpretation)
+
+    def test_marks_band_comparison_insufficient_when_sample_is_too_small(self) -> None:
+        trends = compare_latest_walking_band_years(
+            [
+                WalkingBandYear("2025", "6-10 km", 7, 50.0, 850.0, 104.0, 68.0, None),
+                WalkingBandYear("2026", "6-10 km", 2, 15.0, 810.0, 100.0, 62.0, None),
+            ]
+        )
+
+        self.assertEqual(trends[0].confidence, "Insufficient")
+        self.assertIn("za mala probka", trends[0].interpretation)
 
 
 if __name__ == "__main__":

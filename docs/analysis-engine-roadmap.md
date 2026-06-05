@@ -77,6 +77,7 @@ Inputs:
 Outputs:
 
 - comparable distance bands: 3-6 km, 6-10 km, 10-15 km, 15+ km
+- year-over-year trend inside each distance band, including sample size, confidence, pace delta, HR delta, and kcal/km delta
 - pace
 - average HR
 - kcal/km
@@ -147,6 +148,7 @@ The bundle includes:
 - source-safe coverage numbers
 - research rules
 - deterministic `engineFacts`: activity peak/slump labels, yearly/monthly km, and filtered walking-fitness facts
+- walking distance-band trends so AI compares similar walks instead of mixing short walks with long marches
 - deterministic insights
 - confidence
 - limitations

@@ -55,8 +55,13 @@ class BuildAiContextBundleCliTest(unittest.TestCase):
         self.assertEqual(bundle["engineFacts"]["activityOverTime"]["bestRecentMonth"]["period"], "2026-04")
         self.assertEqual(bundle["engineFacts"]["activityOverTime"]["bestRecentMonth"]["signal"], "peak")
         self.assertNotIn("999999", json.dumps(bundle["engineFacts"], ensure_ascii=True))
-        self.assertEqual(bundle["engineFacts"]["walkingFitness"]["years"][0]["period"], "2026")
-        self.assertEqual(bundle["engineFacts"]["walkingFitness"]["years"][0]["sessions"], 1)
+        self.assertEqual(bundle["engineFacts"]["walkingFitness"]["years"][-1]["period"], "2026")
+        self.assertEqual(bundle["engineFacts"]["walkingFitness"]["years"][-1]["sessions"], 1)
+        walking_band_trends = bundle["engineFacts"]["walkingFitness"]["distanceBandTrends"]
+        self.assertEqual(walking_band_trends[0]["distanceBand"], "6-10 km")
+        self.assertEqual(walking_band_trends[0]["current"]["period"], "2026")
+        self.assertEqual(walking_band_trends[0]["previous"]["period"], "2025")
+        self.assertEqual(walking_band_trends[0]["confidence"], "Insufficient")
         sleep_after_walks = bundle["engineFacts"]["sleepAfterLongWalks"]
         self.assertEqual(sleep_after_walks["thresholdKm"], 8.0)
         self.assertEqual(sleep_after_walks["longWalkSleep"]["days"], 1)
@@ -293,6 +298,10 @@ def create_fixture_db(db_path: Path) -> None:
                 rawTimestampEpochMs, rawPayloadJson, syncedAtEpochMs
             )
             VALUES
+            ('walk-2025', '2025-12-10', 'walking', 'Walking', NULL, NULL,
+             NULL, 7200, 9000.0, 650.0, NULL, 11200, 125.0, 92,
+             154, 800, NULL, NULL, 108.0, NULL, NULL,
+             NULL, 38.0, 'private-route.gpx', 'fixture', 'fixture.csv', NULL, '{"private":true}', 1),
             ('walk-1', '2026-06-01', 'walking', 'Walking', NULL, NULL,
              NULL, 5400, 9000.0, 420.0, NULL, 11000, 120.0, 90,
              150, 720, NULL, NULL, 110.0, NULL, NULL,
