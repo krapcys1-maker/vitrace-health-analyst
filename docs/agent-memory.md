@@ -68,6 +68,7 @@ Local Mi Fitness export summary:
 - Latest live-vs-history comparison: Health Connect is connected but much poorer than the Mi Fitness export on 2026-06-05. Live has current steps/activity/heart/exercise records, but 0 Health Connect sleep, SpO2, VO2 max, and weight records in the latest 30-day quality snapshot. Keep Mi Fitness export as historical baseline and Health Connect as live/freshness source.
 - Main UI direction changed from diagnostic tabs to domain tabs: `Sen`, `Sport`, `Waga`, `Zdrowie`, `Analiza`, `Opcje`. Synchronization and permissions belong only in `Opcje`; health domains should show useful human summaries, trends, and future AI analysis entry points.
 - Domain tabs should not dump every card into one long scroll. Each domain should use internal sections, for example `Przeglad / Historia / Analiza`, so the user manages one focused view at a time.
+- Sport must keep `Kroki` separate from training-derived `Chodzenie` and `Bieganie`. Steps come from daily activity summaries. Walking/running come from Mi Fitness sport records and `daily_workout_type_summaries`.
 - `Zdrowie` now includes a local health journal direction: daily notes, subjective physical/mental state, future lab scans, and AI summaries comparing newest lab results with historical results and daily context.
 
 ## Important Local Paths
@@ -125,6 +126,7 @@ Local Mi Fitness export summary:
 | 2026-06-05 | `vitrace/mvp-foundation` | Reworked Android UI into domain tabs for Sleep, Sport, Weight, Health, Analysis, and Options; moved sync/profile/source controls into Options and added first sleep/sport/body summaries. | `:app:assembleDebug` passed; APK installed with ADB; UI dumps verified Sleep, Sport, Weight, Health, Analysis, and Options tabs on the phone. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Added local health notes storage and expanded the Health tab into daily journal plus future AI/lab analysis area. | `:app:assembleDebug` passed; APK installed with ADB; Room migrated to version 4 on phone; Health tab UI verified; test note save was verified and no test note remains in the phone DB. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Reworked domain screens to use internal section switches instead of dumping all cards into long vertical scrolls. | `:app:assembleDebug` passed; APK installed with ADB; screenshots/UI dumps verified Health, Sport, and Options section switches on the phone. |
+| 2026-06-05 | `vitrace/mvp-foundation` | Split Sport into `Kroki`, `Chodzenie`, `Bieganie`, and `Analiza`; added workout-type summaries so walking/running come from training records, not step totals. | `:app:assembleDebug` passed; importer rerun; phone DB updated; UI dumps verified Sport/Kroki, Sport/Chodzenie, and Sport/Bieganie with running 4 sessions and 16.3 km in last 30 days. |
 
 ## Update Protocol
 

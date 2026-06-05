@@ -92,6 +92,9 @@ After tests pass, run the importer on the private export and compare:
 Workout files:
 
 - session date, duration, distance, calories, average heart rate, cadence -> `daily_workout_summaries`
+- `sport_type = 1` -> running training summaries.
+- `sport_type = 2` -> walking training summaries.
+- Running and walking training summaries are stored separately from daily step totals.
 - GPX paths remain local route detail and should not be sent to AI.
 
 Unclear fields must be imported with uncertainty flags or skipped until verified.

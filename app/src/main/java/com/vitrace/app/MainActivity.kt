@@ -61,6 +61,8 @@ import com.vitrace.app.health.HealthJournalSummary
 import com.vitrace.app.health.LongTermActivitySummary
 import com.vitrace.app.health.SleepDomainSummary
 import com.vitrace.app.health.SportDomainSummary
+import com.vitrace.app.health.WorkoutTypeDaySummary
+import com.vitrace.app.health.WorkoutTypeSummary
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -432,7 +434,7 @@ private fun SportTab(summary: SportDomainSummary?) {
             return
         }
         SectionSwitch(
-            labels = listOf("Dzisiaj", "Historia", "Analiza"),
+            labels = listOf("Kroki", "Chodzenie", "Bieganie", "Analiza"),
             selectedIndex = section,
             onSelect = { index -> section = index },
         )
@@ -441,9 +443,6 @@ private fun SportTab(summary: SportDomainSummary?) {
                 TodayTiles(window = summary.today)
                 PeriodSummaryCard(title = "7 dni", window = summary.last7Days)
                 PeriodSummaryCard(title = "30 dni", window = summary.last30Days)
-                WorkoutSummaryCard(summary)
-            }
-            1 -> {
                 LongTermActivitySection(
                     summary = LongTermActivitySummary(
                         stepsPerKm = summary.stepsPerKm,
@@ -452,6 +451,21 @@ private fun SportTab(summary: SportDomainSummary?) {
                         recentMonths = summary.recentMonths,
                     )
                 )
+            }
+            1 -> WorkoutTypeSection(
+                title = "Chodzenie z treningow",
+                summary = summary.walkingLast30,
+                recentDays = summary.recentWalkingDays,
+                emptyText = "brak osobnych treningow chodzenia w ostatnich 30 dniach",
+            )
+            2 -> WorkoutTypeSection(
+                title = "Bieganie z treningow",
+                summary = summary.runningLast30,
+                recentDays = summary.recentRunningDays,
+                emptyText = "brak osobnych treningow biegania w ostatnich 30 dniach",
+            )
+            else -> {
+                WorkoutSummaryCard(summary)
                 PeriodBarsCard(
                     title = "Kroki miesiecznie",
                     rows = summary.recentMonths.map { month ->
@@ -463,18 +477,72 @@ private fun SportTab(summary: SportDomainSummary?) {
                     },
                     emptyText = "brak miesiecy aktywnosci",
                 )
+                AnalysisCard(
+                    title = "Analiza sportu",
+                    lines = listOf(
+                        "kroki sa z aktywnosci dziennej",
+                        "chodzenie i bieganie sa z treningow, nie z samego licznika krokow",
+                        "dla biegania sprawdzimy tempo, puls, dystans i czas",
+                        "dla chodzenia sprawdzimy objetosc, tempo i obciazenie",
+                    ),
+                    quality = if (summary.workoutLast30.sessionCount > 0) DiagnosticQuality.Good else DiagnosticQuality.Neutral,
+                )
             }
-            else -> AnalysisCard(
-                title = "Analiza sportu",
-                lines = listOf(
-                    "tu rozdzielimy kroki, chodzenie, bieganie i treningi",
-                    "dla biegania bedziemy sprawdzac tempo, puls i dlugosc sesji",
-                    "wniosek typu: dluzej biegasz na nizszym pulsie wymaga serii treningow",
-                ),
-                quality = if (summary.workoutLast30.sessionCount > 0) DiagnosticQuality.Good else DiagnosticQuality.Neutral,
-            )
         }
     }
+}
+
+@Composable
+private fun WorkoutTypeSection(
+    title: String,
+    summary: WorkoutTypeSummary?,
+    recentDays: List<WorkoutTypeDaySummary>,
+    emptyText: String,
+) {
+    if (summary == null || summary.sessionCount == 0) {
+        AnalysisCard(
+            title = title,
+            lines = listOf(emptyText, "to jest oddzielne od zwyklych krokow"),
+            quality = DiagnosticQuality.Warning,
+        )
+        return
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "$title - 30 dni",
+                style = MaterialTheme.typography.titleMedium,
+                color = Color(0xFF0F172A),
+                fontWeight = FontWeight.Bold,
+            )
+            CompactMetricRow("Sesje", summary.sessionCount.toString(), summary.sessionCount.qualityForCount())
+            CompactMetricRow("Dni", summary.daysWithWorkouts.toString(), summary.daysWithWorkouts.qualityForCount())
+            CompactMetricRow("Czas", summary.totalDurationMinutes.formatMinutes(), summary.totalDurationMinutes.qualityForCount())
+            CompactMetricRow("Dystans", "${summary.distanceKm.format1()} km", summary.distanceKm.qualityForPositive())
+            CompactMetricRow("Aktywne kcal", "${summary.activeCaloriesKcal.format0()} kcal", summary.activeCaloriesKcal.qualityForPositive())
+            CompactMetricRow("Sr. puls", summary.avgHeartRateBpm?.let { "${it.format0()} bpm" } ?: "brak", if (summary.avgHeartRateBpm == null) DiagnosticQuality.Warning else DiagnosticQuality.Good)
+        }
+    }
+
+    PeriodBarsCard(
+        title = "Ostatnie treningowe dni",
+        rows = recentDays.map { day ->
+            BarRowData(
+                label = day.date,
+                value = day.distanceKm,
+                text = "${day.distanceKm.format1()} km | ${day.totalDurationMinutes.formatMinutes()}",
+            )
+        },
+        emptyText = "brak ostatnich dni",
+    )
 }
 
 @Composable

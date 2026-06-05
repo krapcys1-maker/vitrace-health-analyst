@@ -19,6 +19,9 @@ interface DailySummaryDao {
     suspend fun upsertWorkouts(summaries: List<DailyWorkoutSummaryEntity>)
 
     @Upsert
+    suspend fun upsertWorkoutTypes(summaries: List<DailyWorkoutTypeSummaryEntity>)
+
+    @Upsert
     suspend fun upsertBody(summaries: List<DailyBodySummaryEntity>)
 
     @Query(
@@ -207,6 +210,34 @@ interface DailySummaryDao {
         """
     )
     suspend fun workoutsSince(startDate: String): WorkoutTotalsAggregate
+
+    @Query(
+        """
+        SELECT
+            workoutType AS workoutType,
+            COUNT(CASE WHEN sessionCount > 0 OR totalDurationMinutes > 0 THEN 1 END) AS daysWithWorkouts,
+            COALESCE(SUM(sessionCount), 0) AS sessionCount,
+            COALESCE(SUM(totalDurationMinutes), 0) AS totalDurationMinutes,
+            COALESCE(SUM(distanceMeters), 0) AS distanceMeters,
+            COALESCE(SUM(activeCaloriesKcal), 0) AS activeCaloriesKcal,
+            COALESCE(SUM(steps), 0) AS steps,
+            AVG(avgHeartRateBpm) AS avgHeartRateBpm
+        FROM daily_workout_type_summaries
+        WHERE date >= :startDate AND workoutType = :workoutType
+        GROUP BY workoutType
+        """
+    )
+    suspend fun workoutTypeSince(startDate: String, workoutType: String): WorkoutTypeAggregate?
+
+    @Query(
+        """
+        SELECT * FROM daily_workout_type_summaries
+        WHERE workoutType = :workoutType
+        ORDER BY date DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun recentWorkoutTypeDays(workoutType: String, limit: Int): List<DailyWorkoutTypeSummaryEntity>
 
     @Query(
         """

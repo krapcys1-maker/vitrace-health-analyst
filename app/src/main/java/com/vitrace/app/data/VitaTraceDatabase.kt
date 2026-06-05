@@ -14,11 +14,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DailyHeartSummaryEntity::class,
         DailySleepSummaryEntity::class,
         DailyWorkoutSummaryEntity::class,
+        DailyWorkoutTypeSummaryEntity::class,
         DailyBodySummaryEntity::class,
         UserProfileEntity::class,
         HealthNoteEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class VitaTraceDatabase : RoomDatabase() {
@@ -163,6 +164,29 @@ abstract class VitaTraceDatabase : RoomDatabase() {
             }
         }
 
+        private val migration4To5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS daily_workout_type_summaries (
+                        date TEXT NOT NULL,
+                        workoutType TEXT NOT NULL,
+                        sessionCount INTEGER NOT NULL,
+                        totalDurationMinutes INTEGER NOT NULL,
+                        distanceMeters REAL NOT NULL,
+                        activeCaloriesKcal REAL NOT NULL,
+                        steps INTEGER NOT NULL,
+                        avgHeartRateBpm REAL,
+                        source TEXT NOT NULL,
+                        lastRecordAtEpochMs INTEGER,
+                        syncedAtEpochMs INTEGER NOT NULL,
+                        PRIMARY KEY(date, workoutType)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun get(context: Context): VitaTraceDatabase {
             return instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -173,6 +197,7 @@ abstract class VitaTraceDatabase : RoomDatabase() {
                     .addMigrations(migration1To2)
                     .addMigrations(migration2To3)
                     .addMigrations(migration3To4)
+                    .addMigrations(migration4To5)
                     .build().also { database ->
                     instance = database
                 }

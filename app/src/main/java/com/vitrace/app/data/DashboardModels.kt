@@ -34,6 +34,17 @@ data class WorkoutTotalsAggregate(
     val totalDurationMinutes: Long,
 )
 
+data class WorkoutTypeAggregate(
+    val workoutType: String,
+    val daysWithWorkouts: Int,
+    val sessionCount: Int,
+    val totalDurationMinutes: Long,
+    val distanceMeters: Double,
+    val activeCaloriesKcal: Double,
+    val steps: Long,
+    val avgHeartRateBpm: Double?,
+)
+
 data class BodySignalAggregate(
     val bodyDays: Int,
     val weightRecords: Int,

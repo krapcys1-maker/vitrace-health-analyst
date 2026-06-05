@@ -29,6 +29,7 @@ import com.vitrace.app.data.HealthNoteEntity
 import com.vitrace.app.data.SleepPeriodAggregate
 import com.vitrace.app.data.UserProfileEntity
 import com.vitrace.app.data.VitaTraceDatabase
+import com.vitrace.app.data.WorkoutTypeAggregate
 import com.vitrace.app.data.WorkoutTotalsAggregate
 import java.time.Duration
 import java.time.Instant
@@ -686,6 +687,14 @@ object HealthConnectDiagnosticsRepository {
             },
             bestMonth = dao.bestActivityMonth()?.toActivityPeriodSummary(profile.stepsPerKm),
             workoutLast30 = dao.workoutsSince(today.minusDays(29).toString()).toWorkoutSummary(),
+            walkingLast30 = dao.workoutTypeSince(today.minusDays(29).toString(), "walking")?.toWorkoutTypeSummary(),
+            runningLast30 = dao.workoutTypeSince(today.minusDays(29).toString(), "running")?.toWorkoutTypeSummary(),
+            recentWalkingDays = dao.recentWorkoutTypeDays("walking", limit = 10).map { summary ->
+                summary.toWorkoutTypeDaySummary()
+            },
+            recentRunningDays = dao.recentWorkoutTypeDays("running", limit = 10).map { summary ->
+                summary.toWorkoutTypeDaySummary()
+            },
         )
     }
 
@@ -747,6 +756,32 @@ object HealthConnectDiagnosticsRepository {
             daysWithWorkouts = daysWithWorkouts,
             sessionCount = sessionCount,
             totalDurationMinutes = totalDurationMinutes,
+        )
+    }
+
+    private fun WorkoutTypeAggregate.toWorkoutTypeSummary(): WorkoutTypeSummary {
+        return WorkoutTypeSummary(
+            workoutType = workoutType,
+            daysWithWorkouts = daysWithWorkouts,
+            sessionCount = sessionCount,
+            totalDurationMinutes = totalDurationMinutes,
+            distanceKm = distanceMeters / 1000.0,
+            activeCaloriesKcal = activeCaloriesKcal,
+            steps = steps,
+            avgHeartRateBpm = avgHeartRateBpm,
+        )
+    }
+
+    private fun com.vitrace.app.data.DailyWorkoutTypeSummaryEntity.toWorkoutTypeDaySummary(): WorkoutTypeDaySummary {
+        return WorkoutTypeDaySummary(
+            date = date,
+            workoutType = workoutType,
+            sessionCount = sessionCount,
+            totalDurationMinutes = totalDurationMinutes,
+            distanceKm = distanceMeters / 1000.0,
+            activeCaloriesKcal = activeCaloriesKcal,
+            steps = steps,
+            avgHeartRateBpm = avgHeartRateBpm,
         )
     }
 

@@ -131,6 +131,20 @@ def build_daily_aggregates(
             day["workoutMinutes"] += duration_seconds // 60
             end_time = int(value.get("end_time") or timestamp + duration_seconds)
             day["workoutLast"] = max(day["workoutLast"] or 0, end_time)
+            workout_type = map_workout_type(value.get("sport_type"))
+            if workout_type is not None:
+                typed = day["workoutTypes"][workout_type]
+                typed["sessions"] += 1
+                typed["minutes"] += duration_seconds // 60
+                typed["distanceMeters"] += optional_float(value.get("distance")) or 0.0
+                typed["activeCaloriesKcal"] += optional_float(value.get("calories")) or 0.0
+                typed["steps"] += optional_int(value.get("steps")) or 0
+                typed["last"] = max(typed["last"] or 0, end_time)
+                avg_hrm = optional_float(value.get("avg_hrm"))
+                if avg_hrm is not None and avg_hrm > 0:
+                    weight = max(duration_seconds, 1)
+                    typed["heartWeightedSum"] += avg_hrm * weight
+                    typed["heartWeight"] += weight
 
             vo2 = value.get("vo2_max")
             if vo2 not in (None, "", 0, "0"):
@@ -157,6 +171,7 @@ def new_day() -> dict[str, Any]:
         "workoutSessions": 0,
         "workoutMinutes": 0,
         "workoutLast": None,
+        "workoutTypes": collections.defaultdict(new_workout_type),
         "weight": None,
         "vo2": None,
         "spo2": None,
@@ -165,6 +180,31 @@ def new_day() -> dict[str, Any]:
         "spo2Count": 0,
         "bodyLast": None,
     }
+
+
+def new_workout_type() -> dict[str, Any]:
+    return {
+        "sessions": 0,
+        "minutes": 0,
+        "distanceMeters": 0.0,
+        "activeCaloriesKcal": 0.0,
+        "steps": 0,
+        "heartWeightedSum": 0.0,
+        "heartWeight": 0,
+        "last": None,
+    }
+
+
+def map_workout_type(raw_type: Any) -> str | None:
+    try:
+        sport_type = int(float(raw_type))
+    except (TypeError, ValueError):
+        return None
+    if sport_type == 1:
+        return "running"
+    if sport_type == 2:
+        return "walking"
+    return None
 
 
 def apply_aggregated_daily_reports(
@@ -264,6 +304,7 @@ def upsert_daily_tables(
     daily: dict[str, dict[str, Any]],
     synced_at_ms: int,
 ) -> None:
+    ensure_workout_type_table(con)
     for date, day in sorted(daily.items()):
         con.execute(
             """
@@ -338,6 +379,35 @@ def upsert_daily_tables(
             ),
         )
 
+        for workout_type, typed in sorted(day["workoutTypes"].items()):
+            heart_avg = (
+                typed["heartWeightedSum"] / typed["heartWeight"]
+                if typed["heartWeight"] > 0
+                else None
+            )
+            con.execute(
+                """
+                INSERT OR REPLACE INTO daily_workout_type_summaries (
+                    date, workoutType, sessionCount, totalDurationMinutes,
+                    distanceMeters, activeCaloriesKcal, steps, avgHeartRateBpm,
+                    source, lastRecordAtEpochMs, syncedAtEpochMs
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    date,
+                    workout_type,
+                    typed["sessions"],
+                    typed["minutes"],
+                    typed["distanceMeters"],
+                    typed["activeCaloriesKcal"],
+                    typed["steps"],
+                    heart_avg,
+                    SOURCE if typed["sessions"] > 0 else "none",
+                    epoch_ms(typed["last"]),
+                    synced_at_ms,
+                ),
+            )
+
         con.execute(
             """
             INSERT OR REPLACE INTO daily_body_summaries (
@@ -363,6 +433,27 @@ def upsert_daily_tables(
 
 def has_activity(day: dict[str, Any]) -> bool:
     return day["steps"] > 0 or day["distanceMeters"] > 0 or day["activeCaloriesKcal"] > 0
+
+
+def ensure_workout_type_table(con: sqlite3.Connection) -> None:
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_workout_type_summaries (
+            date TEXT NOT NULL,
+            workoutType TEXT NOT NULL,
+            sessionCount INTEGER NOT NULL,
+            totalDurationMinutes INTEGER NOT NULL,
+            distanceMeters REAL NOT NULL,
+            activeCaloriesKcal REAL NOT NULL,
+            steps INTEGER NOT NULL,
+            avgHeartRateBpm REAL,
+            source TEXT NOT NULL,
+            lastRecordAtEpochMs INTEGER,
+            syncedAtEpochMs INTEGER NOT NULL,
+            PRIMARY KEY(date, workoutType)
+        )
+        """
+    )
 
 
 def has_body(day: dict[str, Any]) -> bool:

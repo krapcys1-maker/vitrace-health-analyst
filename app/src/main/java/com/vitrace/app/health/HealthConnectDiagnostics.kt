@@ -115,12 +115,38 @@ data class SportDomainSummary(
     val recentMonths: List<ActivityPeriodSummary>,
     val bestMonth: ActivityPeriodSummary?,
     val workoutLast30: WorkoutSummary,
+    val walkingLast30: WorkoutTypeSummary?,
+    val runningLast30: WorkoutTypeSummary?,
+    val recentWalkingDays: List<WorkoutTypeDaySummary>,
+    val recentRunningDays: List<WorkoutTypeDaySummary>,
 )
 
 data class WorkoutSummary(
     val daysWithWorkouts: Int,
     val sessionCount: Int,
     val totalDurationMinutes: Long,
+)
+
+data class WorkoutTypeSummary(
+    val workoutType: String,
+    val daysWithWorkouts: Int,
+    val sessionCount: Int,
+    val totalDurationMinutes: Long,
+    val distanceKm: Double,
+    val activeCaloriesKcal: Double,
+    val steps: Long,
+    val avgHeartRateBpm: Double?,
+)
+
+data class WorkoutTypeDaySummary(
+    val date: String,
+    val workoutType: String,
+    val sessionCount: Int,
+    val totalDurationMinutes: Long,
+    val distanceKm: Double,
+    val activeCaloriesKcal: Double,
+    val steps: Long,
+    val avgHeartRateBpm: Double?,
 )
 
 data class BodyDomainSummary(
