@@ -49,6 +49,7 @@ Local Mi Fitness export summary:
 - Future AI may use DeepSeek only with aggregated summaries and explicit user consent.
 - Future photo/scan imports need an architectural opening now, but OCR is not part of MVP.
 - Body composition and lab results must be treated as trend/supporting data, not diagnosis.
+- Health Connect `TotalCaloriesBurnedRecord` must not be shown as activity calories. It can include basal/resting energy and produced misleading 7/30-day values. Use `ActiveCaloriesBurnedRecord` for movement/workout calories.
 
 ## Important Local Paths
 
@@ -79,6 +80,7 @@ Local Mi Fitness export summary:
 | 2026-06-05 | `vitrace/mvp-foundation` | Added Health Connect live data checklist and implementation order. | Not applicable; documentation only. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Started Android Compose project and Health Connect diagnostics screen. | `gradlew.bat tasks` passed; `:app:assembleDebug` later passed after installing Android SDK tools. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Installed Android command-line tools, SDK Platform 36, Build-Tools, Platform-Tools/ADB; built debug APK. | APK generated at `app/build/outputs/apk/debug/app-debug.apk`. |
+| 2026-06-05 | `vitrace/mvp-foundation` | Fixed Health Connect diagnostics: removed total/basal calories from the activity view and kept active calories only. | `:app:assembleDebug` passed; APK installed with ADB and screenshot verified. |
 
 ## Update Protocol
 

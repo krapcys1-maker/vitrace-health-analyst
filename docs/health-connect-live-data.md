@@ -63,7 +63,7 @@ MVP probe:
 
 - steps
 - distance
-- total calories burned
+- active calories burned
 - heart rate
 - sleep sessions
 - exercise sessions
@@ -88,6 +88,7 @@ Later:
 - Do not send Health Connect raw records to AI.
 - Use app database as source of truth.
 - Use Health Connect aggregate APIs for cumulative totals when possible to avoid double counting.
+- Do not use `TotalCaloriesBurnedRecord` as an activity/workout calorie metric. It can include basal/resting energy and will distort the fitness dashboard. Use `ActiveCaloriesBurnedRecord` for activity calories, and treat basal/total calories as optional technical/body-energy context only.
 
 ## Official References
 
@@ -96,4 +97,3 @@ Later:
 - Read aggregated data: https://developer.android.com/health-and-fitness/health-connect/aggregate-data
 - Data types: https://developer.android.com/health-and-fitness/health-connect/data-types
 - Feature availability: https://developer.android.com/health-and-fitness/health-connect/features/availability
-

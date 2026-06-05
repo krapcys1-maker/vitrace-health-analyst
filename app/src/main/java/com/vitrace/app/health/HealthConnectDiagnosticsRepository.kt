@@ -3,12 +3,14 @@ package com.vitrace.app.health
 import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
+import androidx.health.connect.client.records.OxygenSaturationRecord
+import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.StepsRecord
-import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.request.AggregateRequest
@@ -22,11 +24,12 @@ object HealthConnectDiagnosticsRepository {
     val requiredPermissions: Set<String> = setOf(
         HealthPermission.getReadPermission(StepsRecord::class),
         HealthPermission.getReadPermission(DistanceRecord::class),
-        HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class),
+        HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class),
         HealthPermission.getReadPermission(HeartRateRecord::class),
         HealthPermission.getReadPermission(SleepSessionRecord::class),
         HealthPermission.getReadPermission(ExerciseSessionRecord::class),
         HealthPermission.getReadPermission(Vo2MaxRecord::class),
+        HealthPermission.getReadPermission(OxygenSaturationRecord::class),
         HealthPermission.getReadPermission(WeightRecord::class),
     )
 
@@ -51,7 +54,6 @@ object HealthConnectDiagnosticsRepository {
         val client = HealthConnectClient.getOrCreate(context)
         val granted = client.permissionController.getGrantedPermissions()
         val end = Instant.now()
-        val start = end.minus(Duration.ofDays(7))
 
         if (!granted.containsAll(requiredPermissions)) {
             return HealthConnectDiagnostics(
@@ -70,38 +72,12 @@ object HealthConnectDiagnosticsRepository {
 
         return try {
             val rows = buildList {
-                val aggregate = client.aggregate(
-                    AggregateRequest(
-                        metrics = setOf(
-                            StepsRecord.COUNT_TOTAL,
-                            DistanceRecord.DISTANCE_TOTAL,
-                            TotalCaloriesBurnedRecord.ENERGY_TOTAL,
-                        ),
-                        timeRangeFilter = TimeRangeFilter.between(start, end),
-                    )
-                )
+                addRangeSummary(client, end, days = 1)
+                addRangeSummary(client, end, days = 7)
+                addRangeSummary(client, end, days = 30)
 
-                add(
-                    DiagnosticRow(
-                        label = "Steps, 7 days",
-                        value = (aggregate[StepsRecord.COUNT_TOTAL] ?: 0L).toString(),
-                        quality = DiagnosticQuality.Good,
-                    )
-                )
-                add(
-                    DiagnosticRow(
-                        label = "Distance, 7 days",
-                        value = "${((aggregate[DistanceRecord.DISTANCE_TOTAL]?.inMeters ?: 0.0) / 1000.0).format1()} km",
-                        quality = DiagnosticQuality.Good,
-                    )
-                )
-                add(
-                    DiagnosticRow(
-                        label = "Calories, 7 days",
-                        value = "${(aggregate[TotalCaloriesBurnedRecord.ENERGY_TOTAL]?.inKilocalories ?: 0.0).format0()} kcal",
-                        quality = DiagnosticQuality.Good,
-                    )
-                )
+                val start = end.minus(Duration.ofDays(7))
+                val thirtyDaysStart = end.minus(Duration.ofDays(30))
                 add(
                     DiagnosticRow(
                         label = "Heart records, 7 days",
@@ -125,8 +101,22 @@ object HealthConnectDiagnosticsRepository {
                 )
                 add(
                     DiagnosticRow(
-                        label = "Data origins",
-                        value = readDataOrigins(client, start, end).joinToString().ifBlank { "none" },
+                        label = "Active kcal records, 30d",
+                        value = countRecords(client, ActiveCaloriesBurnedRecord::class, thirtyDaysStart, end).toString(),
+                        quality = DiagnosticQuality.Neutral,
+                    )
+                )
+                add(
+                    DiagnosticRow(
+                        label = "Step origins, 7d",
+                        value = readDataOrigins(client, StepsRecord::class, start, end).joinToString().ifBlank { "none" },
+                        quality = DiagnosticQuality.Neutral,
+                    )
+                )
+                add(
+                    DiagnosticRow(
+                        label = "Active kcal origins, 30d",
+                        value = readDataOrigins(client, ActiveCaloriesBurnedRecord::class, thirtyDaysStart, end).joinToString().ifBlank { "none" },
                         quality = DiagnosticQuality.Neutral,
                     )
                 )
@@ -148,7 +138,48 @@ object HealthConnectDiagnosticsRepository {
         }
     }
 
-    private suspend fun <T : androidx.health.connect.client.records.Record> countRecords(
+    private suspend fun MutableList<DiagnosticRow>.addRangeSummary(
+        client: HealthConnectClient,
+        end: Instant,
+        days: Long,
+    ) {
+        val start = end.minus(Duration.ofDays(days))
+        val aggregate = client.aggregate(
+            AggregateRequest(
+                metrics = setOf(
+                    StepsRecord.COUNT_TOTAL,
+                    DistanceRecord.DISTANCE_TOTAL,
+                    ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL,
+                ),
+                timeRangeFilter = TimeRangeFilter.between(start, end),
+            )
+        )
+        val suffix = "${days}d"
+
+        add(
+            DiagnosticRow(
+                label = "Steps, $suffix",
+                value = (aggregate[StepsRecord.COUNT_TOTAL] ?: 0L).toString(),
+                quality = DiagnosticQuality.Good,
+            )
+        )
+        add(
+            DiagnosticRow(
+                label = "Distance, $suffix",
+                value = "${((aggregate[DistanceRecord.DISTANCE_TOTAL]?.inMeters ?: 0.0) / 1000.0).format1()} km",
+                quality = DiagnosticQuality.Good,
+            )
+        )
+        add(
+            DiagnosticRow(
+                label = "Active calories, $suffix",
+                value = "${(aggregate[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories ?: 0.0).format0()} kcal",
+                quality = DiagnosticQuality.Good,
+            )
+        )
+    }
+
+    private suspend fun <T : Record> countRecords(
         client: HealthConnectClient,
         type: KClass<T>,
         start: Instant,
@@ -172,12 +203,13 @@ object HealthConnectDiagnosticsRepository {
 
     private suspend fun readDataOrigins(
         client: HealthConnectClient,
+        type: KClass<out Record>,
         start: Instant,
         end: Instant,
     ): Set<String> {
         val response = client.readRecords(
             ReadRecordsRequest(
-                recordType = StepsRecord::class,
+                recordType = type,
                 timeRangeFilter = TimeRangeFilter.between(start, end),
             )
         )

@@ -1,5 +1,7 @@
 package com.vitrace.app
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -24,10 +26,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -109,7 +111,10 @@ private fun HealthConnectScreen() {
             diagnostics = diagnostics,
             loading = loading,
             onRequestPermissions = {
-                permissionLauncher.launch(HealthConnectDiagnosticsRepository.requiredPermissions)
+                val openedSettings = openHealthConnectPermissions(context)
+                if (!openedSettings) {
+                    permissionLauncher.launch(HealthConnectDiagnosticsRepository.requiredPermissions)
+                }
             },
             onRefresh = { refresh() },
         )
@@ -117,6 +122,21 @@ private fun HealthConnectScreen() {
         diagnostics?.error?.let { error ->
             ErrorSection(error)
         }
+    }
+}
+
+private fun openHealthConnectPermissions(context: android.content.Context): Boolean {
+    val intent = Intent("android.health.connect.action.MANAGE_HEALTH_PERMISSIONS")
+        .putExtra(Intent.EXTRA_PACKAGE_NAME, context.packageName)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    return try {
+        context.startActivity(intent)
+        true
+    } catch (_: ActivityNotFoundException) {
+        false
+    } catch (_: SecurityException) {
+        false
     }
 }
 

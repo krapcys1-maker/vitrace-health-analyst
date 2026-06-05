@@ -80,7 +80,7 @@ Activity:
 
 - steps
 - distance
-- calories
+- active calories from movement or workouts
 - active days
 - training sessions
 
@@ -147,4 +147,3 @@ Each meaningful feature should include:
 - data quality behavior
 - tests or documented reason for no tests yet
 - update to `docs/agent-memory.md`
-
