@@ -11,8 +11,12 @@ Answer questions like:
 - Does sleep affect next-day activity?
 - Is Health Connect data complete?
 - What changed over the last 7, 30, and 90 days?
+- How many steps and estimated kilometers did I do by year, month, week, and day?
+- Does activity, sleep, heart rate, weight, and body composition reveal personal patterns?
 
 The app must not diagnose disease. It can say that a trend is unusual and worth checking, but it must not claim medical certainty.
+
+The long-term product direction is Personal Body Intelligence: help the user understand their own body from historical personal data, not generic averages.
 
 ## MVP Scope
 
@@ -81,9 +85,12 @@ Activity:
 
 - steps
 - distance
+- estimated distance from steps using configurable `stepsPerKm`, default `1250`
 - active calories from movement or workouts
 - active days
 - training sessions
+- yearly/monthly/weekly/daily step totals
+- best year/month/week and trend versus previous period
 
 The Android dashboard must read these from VitaTrace local daily summary tables, not directly from Health Connect. Health Connect and historical imports are input sources; the local normalized database is the dashboard source. App launch should show cached local dashboard data first; explicit refresh can run the heavier Health Connect sync.
 
@@ -94,6 +101,7 @@ Cardio:
 - min/max heart rate
 - VO2 max
 - cardio efficiency for similar walking/running sessions
+- walking/running heart rate comparison at similar effort
 
 Recovery:
 
@@ -113,6 +121,7 @@ Body composition:
 - bone mass
 - visceral fat
 - basal metabolic rate if available
+- relationship to sleep, heart rate, training tolerance, and cardio efficiency
 
 Future labs/documents:
 
@@ -130,6 +139,7 @@ DeepSeek or any AI provider may receive only an `AiHealthSummary` made from:
 - trend deltas
 - data quality flags
 - deterministic anomaly labels
+- deterministic correlation summaries with sample size, date range, and confidence
 
 AI must not receive:
 
@@ -139,6 +149,8 @@ AI must not receive:
 - photos or scans
 - API keys
 - unreviewed OCR text
+
+AI should explain deterministic findings in plain language. It must not calculate directly from raw records.
 
 ## Acceptance Standard
 
@@ -153,3 +165,4 @@ Each meaningful feature should include:
 
 Historical data import rules live in `docs/historical-data-import.md`. Raw Mi Fitness exports stay private and must not be committed.
 The first deterministic analysis rules live in `app/src/main/java/com/vitrace/app/analysis/` and should stay separate from Compose UI.
+The Personal Body Intelligence prompt lives in `docs/personal-body-intelligence-prompt.md`.

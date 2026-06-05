@@ -57,6 +57,9 @@ Local Mi Fitness export summary:
 - Health Connect `TotalCaloriesBurnedRecord` must not be shown as activity calories. It can include basal/resting energy and produced misleading 7/30-day values. Use `ActiveCaloriesBurnedRecord` for movement/workout calories.
 - VitaTrace must not copy Mi Fitness 1:1. Mi Fitness is a source/collector; VitaTrace is the trend, baseline, reliability, and analysis layer above it.
 - Deterministic analysis logic should live outside Compose UI, currently under `app/src/main/java/com/vitrace/app/analysis/`.
+- Main product direction is Personal Body Intelligence: understand the user's own body from long-term personal data, including yearly/monthly steps, estimated km, sleep/activity correlations, cardio efficiency, VO2 max, weight, and future body composition.
+- Use configurable `stepsPerKm` for estimated distance from steps; default should be `1250`.
+- Correlation insights require sample size and confidence rules. Do not show claims from fewer than 14 comparable days.
 
 ## Important Local Paths
 
@@ -69,16 +72,19 @@ Local Mi Fitness export summary:
 - Public Android setup: `docs/android-setup.md`
 - Public desktop roadmap: `docs/desktop-roadmap.md`
 - Public analytics product plan: `docs/analytics-product-plan.md`
+- Public Personal Body Intelligence prompt: `docs/personal-body-intelligence-prompt.md`
 - Public living memory: `docs/agent-memory.md`
 
 ## Next Recommended Steps
 
 1. Add sample/sanitized CSV fixtures that contain no private health data.
-2. Build parser and importer tests before importing the full private export.
+2. Build parser/importer tests for yearly/monthly step totals and estimated kilometers.
 3. Implement Mi Fitness historical import into the normalized daily summary tables.
-4. Improve dashboard layout after it has real historical data.
-5. Turn Health Connect quality snapshots into a fuller source reliability screen.
-6. Add background sync after foreground sync remains stable.
+4. Add configurable `stepsPerKm` setting, default `1250`.
+5. Add long-term activity dashboard: years, months, best periods, trend versus previous period.
+6. Add correlation confidence rules before showing sleep/activity/body insights.
+7. Turn Health Connect quality snapshots into a fuller source reliability screen.
+8. Add background sync after foreground sync remains stable.
 
 ## Work Log
 
@@ -97,6 +103,7 @@ Local Mi Fitness export summary:
 | 2026-06-05 | `vitrace/mvp-foundation` | Replaced raw Health Connect exception display with a compact sync notice and kept cached dashboard visible on sync failures. | `:app:assembleDebug` passed; APK installed with ADB; UI dump verified no raw error text on startup. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Added analytics product plan, first tabbed app structure, and separated deterministic analysis rules from the Compose screen. | `:app:assembleDebug` passed; APK installed with ADB; Start, Analysis, and Data tabs verified with screenshots. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Fixed system bar clipping and redesigned the Data tab from technical Health Connect records into user-facing source coverage cards. | `:app:assembleDebug` passed; APK installed with ADB; bottom of Start, Analysis, and Data verified with screenshots. |
+| 2026-06-05 | `vitrace/mvp-foundation` | Expanded product plan around Personal Body Intelligence, yearly/monthly steps, estimated kilometers, correlation confidence, body composition, VO2 max, and AI summary rules. | Documentation only; no build needed. |
 
 ## Update Protocol
 

@@ -61,9 +61,12 @@ After tests pass, run the importer on the private export and compare:
 - imported date range
 - total active days
 - steps by day
+- steps by month and year
+- estimated kilometers by month and year using `stepsPerKm`
 - heart samples by day
 - sleep sessions by day
 - workout sessions and GPX count
+- VO2 max records if present in historical export
 
 ## Initial Mapping Targets
 
@@ -84,3 +87,17 @@ Workout files:
 - GPX paths remain local route detail and should not be sent to AI.
 
 Unclear fields must be imported with uncertainty flags or skipped until verified.
+
+## Analytics Outputs From History
+
+Historical import should make these deterministic calculations possible before any AI summary:
+
+- yearly step totals
+- monthly step totals
+- weekly step totals
+- estimated kilometers with configurable `stepsPerKm`, default `1250`
+- best year, month, and week
+- trend versus previous year/month
+- sleep/activity correlation candidates
+- cardio efficiency candidates from workouts, heart rate, pace, and VO2 max when available
+- body composition correlations when weight/body fat/muscle data exists
