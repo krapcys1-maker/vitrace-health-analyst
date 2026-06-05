@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.Canvas
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -38,6 +40,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -46,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
 import com.vitrace.app.analysis.AnalysisBlock
 import com.vitrace.app.analysis.AnalysisConfidence
+import com.vitrace.app.analysis.MonthlySportTrend
 import com.vitrace.app.analysis.PersonalAnalysisContext
 import com.vitrace.app.analysis.SportEfficiencyComparison
 import com.vitrace.app.analysis.buildVitaTraceAnalysis
@@ -513,9 +519,10 @@ private fun SportTab(
             )
             else -> {
                 WorkoutSummaryCard(summary)
+                SportTrendAnalysisCard(analysisContext)
                 PeriodBarsCard(
-                    title = "Kroki miesiecznie",
-                    rows = summary.recentMonths.map { month ->
+                    title = "Kroki - ostatnie 6 miesiecy",
+                    rows = summary.recentMonths.take(6).map { month ->
                         BarRowData(
                             label = month.period,
                             value = month.steps.toDouble(),
@@ -534,7 +541,6 @@ private fun SportTab(
                     ),
                     quality = if (summary.workoutLast30.sessionCount > 0) DiagnosticQuality.Good else DiagnosticQuality.Neutral,
                 )
-                SportTrendAnalysisCard(analysisContext)
             }
         }
     }
@@ -993,29 +999,254 @@ private fun SportTrendAnalysisCard(
     analysisContext: PersonalAnalysisContext?,
 ) {
     val comparisons = analysisContext?.sportEfficiencyComparisons.orEmpty()
-    if (comparisons.isEmpty()) {
+    val trends = analysisContext?.monthlySportTrends.orEmpty()
+    if (comparisons.isEmpty() || analysisContext == null) {
         AnalysisCard(
-            title = "Trendy treningow",
+            title = "Wydolnosc",
             lines = listOf("brak porownan miesiac-do-miesiaca dla chodzenia/biegania"),
             quality = DiagnosticQuality.Warning,
         )
         return
     }
 
-    val lines = buildList {
-        comparisons.forEach { comparison ->
-            addAll(comparison.toUiLines())
-        }
-        add("wykres: do wdrozenia jako linie miesiecy dla dystansu, pulsu, tempa i kcal/km")
-    }
     val bestConfidence = comparisons
         .map { comparison -> comparison.confidence }
         .maxByOrNull { confidence -> confidence.rank() }
         ?: AnalysisConfidence.Insufficient
-    AnalysisCard(
-        title = "Wydolnosc miesiac do miesiaca",
-        lines = lines,
-        quality = bestConfidence.quality(),
+    val primaryComparison = comparisons.firstOrNull { comparison ->
+        comparison.confidence != AnalysisConfidence.Insufficient
+    } ?: comparisons.first()
+    val partialMonth = analysisContext.timeContext.currentPartialDay.take(7)
+    val chartTrends = trends
+        .filter { trend -> trend.workoutType == primaryComparison.workoutType }
+        .filter { trend -> trend.period != partialMonth }
+        .sortedBy { trend -> trend.period }
+        .takeLast(6)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF09090B)),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "Wydolnosc",
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = primaryComparison.headline(),
+                style = MaterialTheme.typography.headlineSmall,
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = primaryComparison.interpretation,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFFD4D4D8),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                primaryComparison.delta?.let { delta ->
+                    FitnessMetricChip(
+                        label = "Puls",
+                        value = delta.avgHeartRateBpm.formatSigned0WithUnit("bpm"),
+                        color = Color(0xFFFF375F),
+                        modifier = Modifier.weight(1f),
+                    )
+                    FitnessMetricChip(
+                        label = "Tempo",
+                        value = delta.avgPaceSecondsPerKm.formatSignedPaceDelta(),
+                        color = Color(0xFF32D74B),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            SportEfficiencyLineChart(
+                trends = chartTrends,
+            )
+            comparisons.forEach { comparison ->
+                SportComparisonEvidence(comparison)
+            }
+            FitnessMetricChip(
+                label = "Pewnosc",
+                value = bestConfidence.label(),
+                color = bestConfidence.watchColor(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun FitnessMetricChip(
+    label: String,
+    value: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        color = Color(0xFF18181B),
+        shape = RoundedCornerShape(8.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Canvas(modifier = Modifier.size(8.dp)) {
+                    drawCircle(color = color)
+                }
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color(0xFFA1A1AA),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SportEfficiencyLineChart(
+    trends: List<MonthlySportTrend>,
+) {
+    if (trends.size < 2) {
+        Text(
+            text = "wykres pojawi sie po minimum dwoch zamknietych miesiacach dla tego typu treningu",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color(0xFFA1A1AA),
+        )
+        return
+    }
+
+    val heartRatePoints = trends.mapNotNull { trend ->
+        trend.avgHeartRateBpm?.let { value -> TrendPoint(trend.period, value) }
+    }
+    val pacePoints = trends.mapNotNull { trend ->
+        trend.avgPaceSecondsPerKm?.let { value -> TrendPoint(trend.period, value / 60.0) }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(150.dp),
+        ) {
+            val left = 8.dp.toPx()
+            val right = size.width - 8.dp.toPx()
+            val top = 10.dp.toPx()
+            val bottom = size.height - 12.dp.toPx()
+            val chartWidth = right - left
+            val chartHeight = bottom - top
+
+            repeat(4) { index ->
+                val y = top + chartHeight * index / 3f
+                drawLine(
+                    color = Color(0xFF27272A),
+                    start = androidx.compose.ui.geometry.Offset(left, y),
+                    end = androidx.compose.ui.geometry.Offset(right, y),
+                    strokeWidth = 1.dp.toPx(),
+                )
+            }
+
+            drawTrendLine(
+                points = heartRatePoints,
+                left = left,
+                top = top,
+                chartWidth = chartWidth,
+                chartHeight = chartHeight,
+                color = Color(0xFFFF375F),
+            )
+            drawTrendLine(
+                points = pacePoints,
+                left = left,
+                top = top,
+                chartWidth = chartWidth,
+                chartHeight = chartHeight,
+                color = Color(0xFF32D74B),
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = trends.first().period,
+                style = MaterialTheme.typography.labelMedium,
+                color = Color(0xFFA1A1AA),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ChartLegendDot("puls", Color(0xFFFF375F))
+                ChartLegendDot("tempo", Color(0xFF32D74B))
+            }
+            Text(
+                text = trends.last().period,
+                style = MaterialTheme.typography.labelMedium,
+                color = Color(0xFFA1A1AA),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChartLegendDot(
+    label: String,
+    color: Color,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Canvas(modifier = Modifier.size(7.dp)) {
+            drawCircle(color = color)
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = Color(0xFFA1A1AA),
+        )
+    }
+}
+
+@Composable
+private fun SportComparisonEvidence(
+    comparison: SportEfficiencyComparison,
+) {
+    val current = comparison.current
+    val previous = comparison.previous
+    val delta = comparison.delta
+    val label = comparison.workoutType.workoutTypeLabel()
+    val text = if (current == null || previous == null || delta == null) {
+        "$label: ${comparison.interpretation}"
+    } else {
+        "$label ${current.period} vs ${previous.period}: dystans ${delta.distanceKm.formatSigned1()} km, sesje ${delta.sessionCount.formatSigned()}"
+    }
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = Color(0xFFD4D4D8),
     )
 }
 
@@ -2091,27 +2322,60 @@ private fun Double?.formatSignedPaceDelta(): String {
     return "$sign%d:%02d/km".format(minutes, seconds)
 }
 
-private fun SportEfficiencyComparison.toUiLines(): List<String> {
+private data class TrendPoint(
+    val period: String,
+    val value: Double,
+)
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTrendLine(
+    points: List<TrendPoint>,
+    left: Float,
+    top: Float,
+    chartWidth: Float,
+    chartHeight: Float,
+    color: Color,
+) {
+    if (points.size < 2) {
+        return
+    }
+    val min = points.minOf { point -> point.value }
+    val max = points.maxOf { point -> point.value }
+    val range = (max - min).takeIf { value -> value > 0.0 } ?: 1.0
+    val offsets = points.mapIndexed { index, point ->
+        val x = left + chartWidth * index / (points.size - 1).toFloat()
+        val normalized = ((point.value - min) / range).toFloat()
+        val y = top + chartHeight * (1f - normalized)
+        androidx.compose.ui.geometry.Offset(x, y)
+    }
+    val path = Path().apply {
+        moveTo(offsets.first().x, offsets.first().y)
+        offsets.drop(1).forEach { offset -> lineTo(offset.x, offset.y) }
+    }
+    drawPath(
+        path = path,
+        color = color,
+        style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round),
+    )
+    offsets.forEach { offset ->
+        drawCircle(
+            color = color,
+            radius = 4.dp.toPx(),
+            center = offset,
+        )
+    }
+}
+
+private fun SportEfficiencyComparison.headline(): String {
     val currentTrend = current
     val previousTrend = previous
     val deltaTrend = delta
     val label = workoutType.workoutTypeLabel()
     if (currentTrend == null || previousTrend == null || deltaTrend == null) {
-        return listOf(
-            "$label: za malo miesiecy do porownania",
-            "pewnosc: ${confidence.label()}",
-            "wniosek: $interpretation",
-        )
+        return "$label: za malo danych"
     }
-
-    return listOf(
-        "$label ${currentTrend.period} vs ${previousTrend.period}",
-        "dystans: ${deltaTrend.distanceKm.formatSigned1()} km | sesje ${deltaTrend.sessionCount.formatSigned()}",
-        "puls: ${deltaTrend.avgHeartRateBpm.formatSigned0WithUnit("bpm")} | tempo ${deltaTrend.avgPaceSecondsPerKm.formatSignedPaceDelta()}",
-        "kcal/km: ${deltaTrend.activeCaloriesPerKm.formatSigned0WithUnit("kcal")} | kcal/min ${deltaTrend.activeCaloriesPerMinute.formatSigned1WithUnit("kcal")}",
-        "pewnosc: ${confidence.label()}",
-        "wniosek: $interpretation",
-    )
+    val pulse = deltaTrend.avgHeartRateBpm.formatSigned0WithUnit("bpm")
+    val pace = deltaTrend.avgPaceSecondsPerKm.formatSignedPaceDelta()
+    return "$label: $pulse, $pace"
 }
 
 private fun String.workoutTypeLabel(): String {
@@ -2146,6 +2410,15 @@ private fun AnalysisConfidence.quality(): DiagnosticQuality {
         AnalysisConfidence.Low -> DiagnosticQuality.Neutral
         AnalysisConfidence.Medium,
         AnalysisConfidence.High -> DiagnosticQuality.Good
+    }
+}
+
+private fun AnalysisConfidence.watchColor(): Color {
+    return when (this) {
+        AnalysisConfidence.Insufficient -> Color(0xFFFF9F0A)
+        AnalysisConfidence.Low -> Color(0xFFFFD60A)
+        AnalysisConfidence.Medium -> Color(0xFF30D158)
+        AnalysisConfidence.High -> Color(0xFF32D74B)
     }
 }
 

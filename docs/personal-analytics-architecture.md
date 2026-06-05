@@ -320,6 +320,13 @@ Use visual language:
 - confidence badge: weak / medium / strong
 - source badge: Mi Fitness history / Health Connect live / manual
 
+Visual direction:
+
+- The app should be inspired by Apple Watch / Apple Fitness readability: dark high-contrast insight cards, bright metric colors, compact numbers, rings/lines for movement and cardio signals.
+- Do not copy Apple screens 1:1. Use the pattern: answer first, evidence second, drill-down third.
+- Use dark cards only for key insight dashboards. Regular lists and settings may stay light and calm.
+- Sport analysis should prioritize one clear performance answer, then trend lines for HR, pace, distance, kcal/km, and then month/session evidence.
+
 Copy should be answer-first:
 
 - good: "More activity is linked with better deep sleep in your data"
