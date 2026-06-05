@@ -83,6 +83,8 @@ class BuildAiContextBundleCliTest(unittest.TestCase):
         self.assertEqual(heart_load["totalHeartDays"], 2)
         self.assertEqual(heart_load["credibleHeartDays"], 1)
         self.assertEqual(heart_load["excludedLowCoverageDays"], 1)
+        self.assertIn("activitySplit", heart_load)
+        self.assertEqual(heart_load["activitySplit"]["confidence"], "Insufficient")
         self.assertNotIn("190.0", json.dumps(heart_load, ensure_ascii=True))
         self.assertIn("2026-06-05 as partial", bundle["source"]["closedDayRule"])
         self.assertIn("Do not diagnose", prompt)

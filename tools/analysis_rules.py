@@ -169,6 +169,32 @@ class ActivityWorkoutSleepLoadResult:
     interpretation: str
 
 
+@dataclass(frozen=True)
+class HeartLoadGroup:
+    label: str
+    days: int
+    avg_bpm: float | None
+    avg_steps: float | None
+    avg_workout_minutes: float | None
+    sleep_days: int
+    avg_sleep_minutes: float | None
+    avg_samples: float | None
+
+
+@dataclass(frozen=True)
+class HeartLoadSplitResult:
+    normal_low_activity: HeartLoadGroup
+    normal_high_activity: HeartLoadGroup
+    high_with_activity: HeartLoadGroup
+    high_without_activity: HeartLoadGroup
+    confidence: str
+    high_activity_hr_delta: float | None
+    high_activity_sleep_delta: float | None
+    unexplained_hr_delta: float | None
+    unexplained_sleep_delta: float | None
+    interpretation: str
+
+
 def classify_activity_months(
     months: list[ActivityMonth],
     *,
@@ -640,6 +666,86 @@ def activity_workout_sleep_interpretation(
     if long_cost or long_score_cost:
         return "dlugi marsz wyglada na osobny koszt regeneracyjny"
     return "brak wyraznej roznicy po oddzieleniu dlugich marszow"
+
+
+def compare_heart_load_split(
+    normal_low_activity: HeartLoadGroup,
+    normal_high_activity: HeartLoadGroup,
+    high_with_activity: HeartLoadGroup,
+    high_without_activity: HeartLoadGroup,
+    *,
+    min_unexplained_days: int = 5,
+    min_activity_days: int = 10,
+) -> HeartLoadSplitResult:
+    high_activity_hr_delta = numeric_delta(high_with_activity.avg_bpm, normal_high_activity.avg_bpm)
+    high_activity_sleep_delta = numeric_delta(high_with_activity.avg_sleep_minutes, normal_high_activity.avg_sleep_minutes)
+    unexplained_hr_delta = numeric_delta(high_without_activity.avg_bpm, normal_low_activity.avg_bpm)
+    unexplained_sleep_delta = numeric_delta(high_without_activity.avg_sleep_minutes, normal_low_activity.avg_sleep_minutes)
+    confidence = heart_load_split_confidence(
+        normal_low_activity,
+        normal_high_activity,
+        high_with_activity,
+        high_without_activity,
+        min_unexplained_days=min_unexplained_days,
+        min_activity_days=min_activity_days,
+    )
+    return HeartLoadSplitResult(
+        normal_low_activity=normal_low_activity,
+        normal_high_activity=normal_high_activity,
+        high_with_activity=high_with_activity,
+        high_without_activity=high_without_activity,
+        confidence=confidence,
+        high_activity_hr_delta=high_activity_hr_delta,
+        high_activity_sleep_delta=high_activity_sleep_delta,
+        unexplained_hr_delta=unexplained_hr_delta,
+        unexplained_sleep_delta=unexplained_sleep_delta,
+        interpretation=heart_load_split_interpretation(
+            confidence,
+            high_activity_hr_delta,
+            unexplained_hr_delta,
+            high_without_activity.days,
+            high_without_activity.sleep_days,
+        ),
+    )
+
+
+def heart_load_split_confidence(
+    normal_low_activity: HeartLoadGroup,
+    normal_high_activity: HeartLoadGroup,
+    high_with_activity: HeartLoadGroup,
+    high_without_activity: HeartLoadGroup,
+    *,
+    min_unexplained_days: int,
+    min_activity_days: int,
+) -> str:
+    if (
+        normal_low_activity.days < min_activity_days
+        or normal_high_activity.days < min_activity_days
+        or high_with_activity.days < min_activity_days
+        or high_without_activity.days < min_unexplained_days
+    ):
+        return "Insufficient"
+    if high_without_activity.days >= 20 and high_with_activity.days >= 20:
+        return "Medium"
+    return "Low"
+
+
+def heart_load_split_interpretation(
+    confidence: str,
+    high_activity_hr_delta: float | None,
+    unexplained_hr_delta: float | None,
+    unexplained_days: int,
+    unexplained_sleep_days: int,
+) -> str:
+    if confidence == "Insufficient":
+        return "za mala probka do rozdzielenia wysokiego pulsu z ruchem i bez ruchu"
+    if unexplained_days > 0 and unexplained_sleep_days < max(3, unexplained_days // 2):
+        return "wysoki puls bez duzej aktywnosci istnieje, ale ma slabe pokrycie snem; monitorowac dalej"
+    if unexplained_hr_delta is not None and unexplained_hr_delta >= 15:
+        return "czesc wysokiego pulsu nie wyglada na wyjasniona ruchem; to sygnal do monitorowania, nie diagnoza"
+    if high_activity_hr_delta is not None and high_activity_hr_delta >= 10:
+        return "wysoki puls glownie idzie razem z ruchem/treningiem, ale trzeba monitorowac dni bez duzej aktywnosci"
+    return "w danych nie ma mocnego rozdzielenia wysokiego pulsu od aktywnosci"
 
 
 def walking_band_year_from_row(row: object) -> WalkingBandYear:

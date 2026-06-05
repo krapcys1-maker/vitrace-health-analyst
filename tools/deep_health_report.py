@@ -17,6 +17,8 @@ from analysis_rules import (
     CREDIBLE_DAILY_HEART_FILTER_SQL,
     CREDIBLE_WALKING_FILTER_SQL,
     FITNESS_WALKING_FILTER_SQL,
+    HeartLoadGroup,
+    HeartLoadSplitResult,
     HEART_MIN_DAILY_SAMPLES,
     LONG_WALK_SLEEP_MIN_DISTANCE_KM,
     ActivityMonth,
@@ -27,6 +29,7 @@ from analysis_rules import (
     classify_activity_months,
     compare_activity_sleep_thresholds,
     compare_activity_workout_sleep_load,
+    compare_heart_load_split,
     compare_sleep_window_to_baseline,
     compare_latest_walking_band_years,
 )
@@ -556,6 +559,7 @@ def sleep_section(
 
 
 def heart_section(heart: dict[str, object]) -> list[str]:
+    split = heart.get("load_split")
     lines = [
         "## Puls: uzywac jako sygnalu obciazenia, nie jako diagnozy",
         "",
@@ -573,6 +577,26 @@ def heart_section(heart: dict[str, object]) -> list[str]:
     lines.extend([
         "",
         "Wniosek: to jest dobry kandydat na alert `sprawdz regeneracje`, ale dopiero po rozdzieleniu resting HR od sredniego dziennego HR i po lepszym live pokryciu.",
+        "",
+        "Rozdzielenie wysokiego pulsu wedlug obciazenia dnia:",
+        "",
+    ])
+    if isinstance(split, HeartLoadSplitResult):
+        lines.extend([
+            "| Grupa | Dni | Puls | Kroki | Trening | Noce ze snem | Sen | Probki HR |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|",
+            heart_load_group_row(split.normal_low_activity),
+            heart_load_group_row(split.normal_high_activity),
+            heart_load_group_row(split.high_with_activity),
+            heart_load_group_row(split.high_without_activity),
+            "",
+            f"Wysoki puls z aktywnoscia vs normalny puls z aktywnoscia: HR {fmt_signed_number(split.high_activity_hr_delta)}, sen {signed_minutes(split.high_activity_sleep_delta)}.",
+            f"Wysoki puls bez duzej aktywnosci vs normalny spokojniejszy dzien: HR {fmt_signed_number(split.unexplained_hr_delta)}, sen {signed_minutes(split.unexplained_sleep_delta)}. "
+            f"Pewnosc: {confidence_pl(split.confidence)}. Wniosek: {split.interpretation}.",
+        ])
+    else:
+        lines.append("Brak wystarczajacej probki do rozdzielenia pulsu wedlug aktywnosci.")
+    lines.extend([
         "",
     ])
     return lines
@@ -1060,6 +1084,16 @@ def heart_context(con: sqlite3.Connection, cutoff_date: str) -> dict[str, object
     threshold = baseline + std if baseline is not None and std is not None else None
     high_rows = [row for row in rows if threshold is not None and row["hr"] >= threshold]
     normal_rows = [row for row in rows if threshold is not None and row["hr"] < threshold]
+    step_values = sorted(int(row["steps"] or 0) for row in rows)
+    high_step_threshold = step_values[(len(step_values) * 3) // 4] if step_values else None
+    is_high_activity = lambda row: (
+        high_step_threshold is not None
+        and (int(row["steps"] or 0) >= high_step_threshold or float(row["workout"] or 0) >= 30.0)
+    )
+    normal_low_activity_rows = [row for row in normal_rows if not is_high_activity(row)]
+    normal_high_activity_rows = [row for row in normal_rows if is_high_activity(row)]
+    high_with_activity_rows = [row for row in high_rows if is_high_activity(row)]
+    high_without_activity_rows = [row for row in high_rows if not is_high_activity(row)]
     return {
         "days": len(rows),
         "total_days": total_days,
@@ -1069,6 +1103,13 @@ def heart_context(con: sqlite3.Connection, cutoff_date: str) -> dict[str, object
         "threshold": threshold,
         "high": aggregate_heart_group(high_rows),
         "normal": aggregate_heart_group(normal_rows),
+        "high_step_threshold": high_step_threshold,
+        "load_split": compare_heart_load_split(
+            aggregate_heart_load_group("normalny puls, spokojniejszy dzien", normal_low_activity_rows),
+            aggregate_heart_load_group("normalny puls, wysoka aktywnosc", normal_high_activity_rows),
+            aggregate_heart_load_group("wysoki puls z aktywnoscia", high_with_activity_rows),
+            aggregate_heart_load_group("wysoki puls bez duzej aktywnosci", high_without_activity_rows),
+        ),
     }
 
 
@@ -1139,6 +1180,20 @@ def aggregate_heart_group(rows: list[sqlite3.Row]) -> dict[str, float]:
         "steps": average(rows, "steps"),
         "workout": average(rows, "workout"),
     }
+
+
+def aggregate_heart_load_group(label: str, rows: list[sqlite3.Row]) -> HeartLoadGroup:
+    sleep_values = [row for row in rows if row["sleep"] is not None]
+    return HeartLoadGroup(
+        label=label,
+        days=len(rows),
+        avg_bpm=average(rows, "hr"),
+        avg_steps=average(rows, "steps"),
+        avg_workout_minutes=average(rows, "workout"),
+        sleep_days=len(sleep_values),
+        avg_sleep_minutes=average(rows, "sleep"),
+        avg_samples=average(rows, "samples"),
+    )
 
 
 def average(rows: list[sqlite3.Row], key: str) -> float | None:
@@ -1237,6 +1292,14 @@ def activity_workout_sleep_group_row(group: ActivityWorkoutSleepGroup) -> str:
         f"| {group.label} | {group.days} | {fmt_int(group.avg_steps)} sr. | "
         f"{fmt1(group.avg_walking_km)} km sr. | {minutes_h(group.total_minutes)} | "
         f"{fmt1(group.rem_minutes)} | {fmt1(group.deep_minutes)} | {fmt1(group.score)} |"
+    )
+
+
+def heart_load_group_row(group: HeartLoadGroup) -> str:
+    return (
+        f"| {group.label} | {group.days} | {fmt1(group.avg_bpm)} | {fmt_int(group.avg_steps)} | "
+        f"{fmt1(group.avg_workout_minutes)} | {group.sleep_days} | {minutes_h(group.avg_sleep_minutes)} | "
+        f"{fmt1(group.avg_samples)} |"
     )
 
 

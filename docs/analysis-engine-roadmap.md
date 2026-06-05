@@ -129,11 +129,18 @@ Outputs:
 - credible heart-day filter by sample count and sane average-HR range
 - high average-HR days versus baseline
 - context: sleep, steps, workout minutes
+- high average-HR split by activity load:
+  - normal HR, lower-activity days
+  - normal HR, high-activity days
+  - high HR with high activity or 30+ workout minutes
+  - high HR without large activity
+- confidence and sleep coverage for each heart-load split
 - exercise HR by comparable workout type/distance
 
 AI role:
 
 - explain load/recovery context
+- separate expected exercise load from unexplained daily heart load
 - never call daily average HR "resting HR"
 - never diagnose
 
@@ -155,6 +162,7 @@ The bundle includes:
 - sleep baseline facts so AI sees recent 7/14/30 measured nights against the user's own baseline before explaining recovery
 - activity-to-next-sleep threshold facts so AI can explain whether high activity days look helpful, harmful, mixed, or neutral for recovery
 - activity/workout sleep-load facts so AI separates high daily steps from long walking-session recovery cost
+- heart-load activity split facts so AI separates high average daily HR after activity from high average daily HR without large activity
 - deterministic insights
 - confidence
 - limitations

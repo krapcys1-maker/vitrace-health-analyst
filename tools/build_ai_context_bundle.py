@@ -18,6 +18,8 @@ from analysis_rules import (
     CREDIBLE_DAILY_HEART_FILTER_SQL,
     CREDIBLE_WALKING_FILTER_SQL,
     FITNESS_WALKING_FILTER_SQL,
+    HeartLoadGroup,
+    HeartLoadSplitResult,
     HEART_MIN_DAILY_SAMPLES,
     LONG_WALK_SLEEP_MIN_DISTANCE_KM,
     ActivityMonth,
@@ -27,6 +29,7 @@ from analysis_rules import (
     classify_activity_months,
     compare_activity_sleep_thresholds,
     compare_activity_workout_sleep_load,
+    compare_heart_load_split,
     compare_sleep_window_to_baseline,
     compare_latest_walking_band_years,
 )
@@ -835,6 +838,28 @@ def heart_load_facts(con: sqlite3.Connection, generated_for_date: str) -> dict[s
     normal_rows = [row for row in rows if threshold is not None and float(row["avgBpm"]) < threshold]
     high = heart_group(high_rows)
     normal = heart_group(normal_rows)
+    step_values = sorted(int(row["steps"] or 0) for row in rows)
+    high_step_threshold = step_values[(len(step_values) * 3) // 4] if step_values else None
+
+    def is_high_activity(row: sqlite3.Row) -> bool:
+        return (
+            high_step_threshold is not None
+            and (
+                int(row["steps"] or 0) >= high_step_threshold
+                or float(row["workoutMinutes"] or 0.0) >= 30.0
+            )
+        )
+
+    normal_low_activity_rows = [row for row in normal_rows if not is_high_activity(row)]
+    normal_high_activity_rows = [row for row in normal_rows if is_high_activity(row)]
+    high_with_activity_rows = [row for row in high_rows if is_high_activity(row)]
+    high_without_activity_rows = [row for row in high_rows if not is_high_activity(row)]
+    load_split = compare_heart_load_split(
+        heart_load_group("normalLowActivity", normal_low_activity_rows),
+        heart_load_group("normalHighActivity", normal_high_activity_rows),
+        heart_load_group("highWithActivity", high_with_activity_rows),
+        heart_load_group("highWithoutActivity", high_without_activity_rows),
+    )
 
     return {
         "available": bool(rows),
@@ -845,14 +870,62 @@ def heart_load_facts(con: sqlite3.Connection, generated_for_date: str) -> dict[s
         "excludedLowCoverageDays": max(total_days - len(rows), 0),
         "baselineAvgBpm": baseline,
         "highDayThresholdAvgBpm": threshold,
+        "highActivityThresholdSteps": high_step_threshold,
         "highAvgHeartDays": high,
         "otherHeartDays": normal,
+        "activitySplit": heart_load_split_to_dict(load_split),
         "delta": {
             "sleepMinutes": numeric_delta(high.get("totalSleepMinutes"), normal.get("totalSleepMinutes")),
             "steps": numeric_delta(high.get("steps"), normal.get("steps")),
             "workoutMinutes": numeric_delta(high.get("workoutMinutes"), normal.get("workoutMinutes")),
         },
         "interpretationGuard": "daily average HR only; not resting HR and not diagnosis",
+    }
+
+
+def heart_load_group(label: str, rows: list[sqlite3.Row]) -> HeartLoadGroup:
+    sleep_values = [row for row in rows if row["totalSleepMinutes"] is not None]
+    return HeartLoadGroup(
+        label=label,
+        days=len(rows),
+        avg_bpm=rounded_average(rows, "avgBpm"),
+        avg_steps=rounded_average(rows, "steps"),
+        avg_workout_minutes=rounded_average(rows, "workoutMinutes"),
+        sleep_days=len(sleep_values),
+        avg_sleep_minutes=rounded_average(rows, "totalSleepMinutes"),
+        avg_samples=rounded_average(rows, "sampleCount"),
+    )
+
+
+def heart_load_split_to_dict(result: HeartLoadSplitResult) -> dict[str, Any]:
+    return {
+        "normalLowActivity": heart_load_group_to_dict(result.normal_low_activity),
+        "normalHighActivity": heart_load_group_to_dict(result.normal_high_activity),
+        "highWithActivity": heart_load_group_to_dict(result.high_with_activity),
+        "highWithoutActivity": heart_load_group_to_dict(result.high_without_activity),
+        "confidence": result.confidence,
+        "highWithActivityVsNormalHighActivity": {
+            "avgBpm": result.high_activity_hr_delta,
+            "sleepMinutes": result.high_activity_sleep_delta,
+        },
+        "highWithoutActivityVsNormalLowActivity": {
+            "avgBpm": result.unexplained_hr_delta,
+            "sleepMinutes": result.unexplained_sleep_delta,
+        },
+        "interpretation": result.interpretation,
+    }
+
+
+def heart_load_group_to_dict(group: HeartLoadGroup) -> dict[str, Any]:
+    return {
+        "label": group.label,
+        "days": group.days,
+        "avgBpm": group.avg_bpm,
+        "avgSteps": group.avg_steps,
+        "avgWorkoutMinutes": group.avg_workout_minutes,
+        "sleepDays": group.sleep_days,
+        "avgSleepMinutes": group.avg_sleep_minutes,
+        "avgSamples": group.avg_samples,
     }
 
 

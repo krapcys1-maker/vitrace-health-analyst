@@ -7,10 +7,12 @@ from tools.analysis_rules import (
     ActivitySleepGroup,
     SleepWindow,
     ActivityWorkoutSleepGroup,
+    HeartLoadGroup,
     WalkingBandYear,
     classify_activity_months,
     compare_activity_sleep_thresholds,
     compare_activity_workout_sleep_load,
+    compare_heart_load_split,
     compare_sleep_window_to_baseline,
     compare_latest_walking_band_years,
     evaluate_walking_session,
@@ -222,6 +224,32 @@ class ActivityWorkoutSleepLoadTest(unittest.TestCase):
             ActivityWorkoutSleepGroup("typical", 60, 10_000.0, 1.2, 430.0, 80.0, 57.0, 73.0),
             ActivityWorkoutSleepGroup("high", 5, 26_000.0, 0.6, 430.0, 63.0, 56.0, 70.0),
             ActivityWorkoutSleepGroup("long", 3, 26_000.0, 17.4, 405.0, 72.0, 53.0, 68.0),
+        )
+
+        self.assertEqual(result.confidence, "Insufficient")
+        self.assertIn("za mala probka", result.interpretation)
+
+
+class HeartLoadSplitTest(unittest.TestCase):
+    def test_flags_high_heart_without_large_activity_as_monitoring_signal(self) -> None:
+        result = compare_heart_load_split(
+            HeartLoadGroup("normal low", 80, 86.0, 7000.0, 1.0, 30, 396.0, 600.0),
+            HeartLoadGroup("normal high", 70, 90.0, 16000.0, 110.0, 30, 442.0, 585.0),
+            HeartLoadGroup("high with activity", 16, 109.0, 16100.0, 49.0, 8, 453.0, 523.0),
+            HeartLoadGroup("high without activity", 11, 115.0, 9800.0, 3.0, 2, 380.0, 523.0),
+        )
+
+        self.assertEqual(result.confidence, "Low")
+        self.assertEqual(result.high_activity_hr_delta, 19.0)
+        self.assertEqual(result.unexplained_hr_delta, 29.0)
+        self.assertIn("slabe pokrycie snem", result.interpretation)
+
+    def test_marks_heart_load_split_insufficient(self) -> None:
+        result = compare_heart_load_split(
+            HeartLoadGroup("normal low", 80, 86.0, 7000.0, 1.0, 30, 396.0, 600.0),
+            HeartLoadGroup("normal high", 70, 90.0, 16000.0, 110.0, 30, 442.0, 585.0),
+            HeartLoadGroup("high with activity", 3, 109.0, 16100.0, 49.0, 2, 453.0, 523.0),
+            HeartLoadGroup("high without activity", 2, 115.0, 9800.0, 3.0, 1, 380.0, 523.0),
         )
 
         self.assertEqual(result.confidence, "Insufficient")
