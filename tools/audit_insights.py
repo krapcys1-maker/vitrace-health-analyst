@@ -27,6 +27,7 @@ CORE_SCOPES = {
 KNOWN_SCOPES = CORE_SCOPES | {
     "long_term_steps_km",
     "sleep_monthly_baseline",
+    "heart_outlier_context",
 }
 REQUIRED_RESULT_KEYS = {
     "id",

@@ -37,7 +37,7 @@ class AuditInsightsCliTest(unittest.TestCase):
             db_path = Path(tmpdir) / "vitrace-test.db"
             create_fixture_db(
                 db_path,
-                extra_scopes=["long_term_steps_km", "sleep_monthly_baseline"],
+                extra_scopes=["long_term_steps_km", "sleep_monthly_baseline", "heart_outlier_context"],
             )
 
             result = run_audit(db_path)
@@ -45,6 +45,7 @@ class AuditInsightsCliTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("long_term_steps_km", result.stdout)
         self.assertIn("sleep_monthly_baseline", result.stdout)
+        self.assertIn("heart_outlier_context", result.stdout)
 
     def test_unknown_engine_scope_fails(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:

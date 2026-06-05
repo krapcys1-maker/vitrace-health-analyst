@@ -37,6 +37,8 @@ class OfflineSignalReportCliTest(unittest.TestCase):
         self.assertIn("Closed-day rule: rows before `2026-06-05`", result.stdout)
         self.assertIn("| 2026 | 2 | 20,000 | 16.0 | 15.0 |", result.stdout)
         self.assertNotIn("1,019,999", result.stdout)
+        self.assertIn("Heart Context", result.stdout)
+        self.assertNotIn("999 bpm", result.stdout)
         self.assertIn("Walking Workout Baselines", result.stdout)
 
     def test_report_can_be_written_to_file(self) -> None:
@@ -115,6 +117,26 @@ def create_fixture_db(db_path: Path) -> None:
                 distanceMeters REAL NOT NULL,
                 activeCaloriesKcal REAL NOT NULL,
                 source TEXT NOT NULL,
+                syncedAtEpochMs INTEGER NOT NULL
+            );
+
+            CREATE TABLE daily_heart_summaries (
+                date TEXT NOT NULL PRIMARY KEY,
+                sampleCount INTEGER NOT NULL,
+                minBpm INTEGER,
+                maxBpm INTEGER,
+                avgBpm REAL,
+                source TEXT NOT NULL,
+                lastRecordAtEpochMs INTEGER,
+                syncedAtEpochMs INTEGER NOT NULL
+            );
+
+            CREATE TABLE daily_workout_summaries (
+                date TEXT NOT NULL PRIMARY KEY,
+                sessionCount INTEGER NOT NULL,
+                totalDurationMinutes INTEGER NOT NULL,
+                source TEXT NOT NULL,
+                lastRecordAtEpochMs INTEGER,
                 syncedAtEpochMs INTEGER NOT NULL
             );
 
@@ -218,6 +240,30 @@ def create_fixture_db(db_path: Path) -> None:
                 ("2026-06-01", 420, 50, 280, 70, 72),
                 ("2026-06-02", 460, 70, 300, 80, 80),
                 ("2026-06-05", 30, 1, 20, 1, 10),
+            ],
+        )
+        con.executemany(
+            """
+            INSERT INTO daily_heart_summaries
+            (date, sampleCount, minBpm, maxBpm, avgBpm, source, lastRecordAtEpochMs, syncedAtEpochMs)
+            VALUES (?, ?, ?, ?, ?, 'fixture', NULL, 1)
+            """,
+            [
+                ("2026-06-01", 100, 60, 130, 80.0),
+                ("2026-06-02", 100, 70, 150, 110.0),
+                ("2026-06-05", 100, 90, 210, 999.0),
+            ],
+        )
+        con.executemany(
+            """
+            INSERT INTO daily_workout_summaries
+            (date, sessionCount, totalDurationMinutes, source, lastRecordAtEpochMs, syncedAtEpochMs)
+            VALUES (?, ?, ?, 'fixture', NULL, 1)
+            """,
+            [
+                ("2026-06-01", 1, 30),
+                ("2026-06-02", 1, 60),
+                ("2026-06-05", 1, 999),
             ],
         )
         con.execute(

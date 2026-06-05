@@ -2,6 +2,7 @@ package com.vitrace.app.analysis
 
 import com.vitrace.app.data.AnalysisResultEntity
 import com.vitrace.app.data.ActivityPeriodAggregate
+import com.vitrace.app.data.HeartContextRow
 import com.vitrace.app.data.MonthlySleepPhaseAggregate
 import com.vitrace.app.data.SleepActivityFeatureRow
 import com.vitrace.app.data.SleepNextDayActivityRow
@@ -79,6 +80,7 @@ object InsightEngine {
         val yearlyActivity = dao.yearlyActivityBefore(todayText)
         val bestActivityMonth = dao.bestActivityMonthBefore(todayText)
         val monthlySleep = dao.monthlySleepPhasesBefore(beforeDate = todayText, limit = 8)
+        val heartContextRows = dao.heartContextRowsBefore(todayText)
         val currentWalkingBands = dao.walkingBandsBetween(
             startDate = currentStart.toString(),
             endDate = currentEnd.toString(),
@@ -101,6 +103,7 @@ object InsightEngine {
             buildSameNightSleepInsight(sleepActivityRows),
             buildNextDayActivityInsight(nextDayRows),
             buildTrainingSleepInsight(trainingSleepRows),
+            buildHeartContextInsight(heartContextRows),
             buildWalkingEfficiencyInsight(
                 currentStart = currentStart,
                 currentEnd = currentEnd,
@@ -359,6 +362,68 @@ object InsightEngine {
         )
     }
 
+    private fun buildHeartContextInsight(
+        rows: List<HeartContextRow>,
+    ): TestedInsight {
+        val avgBpmValues = rows.map { row -> row.avgBpm }
+        val baselineAvg = avgBpmValues.averageOrNull()
+        val baselineStdDev = avgBpmValues.standardDeviationOrNull()
+        val highThreshold = baselineAvg?.let { avg -> avg + (baselineStdDev ?: 0.0) }
+        val highRows = if (highThreshold == null) {
+            emptyList()
+        } else {
+            rows.filter { row -> row.avgBpm >= highThreshold }
+        }
+        val normalRows = if (highThreshold == null) {
+            emptyList()
+        } else {
+            rows.filter { row -> row.avgBpm < highThreshold }
+        }
+        val highSleep = highRows.mapNotNull { row -> row.totalSleepMinutes }.averageOrNull()
+        val normalSleep = normalRows.mapNotNull { row -> row.totalSleepMinutes }.averageOrNull()
+        val highSteps = highRows.map { row -> row.steps }.averageOrNull()
+        val normalSteps = normalRows.map { row -> row.steps }.averageOrNull()
+        val highWorkout = highRows.map { row -> row.workoutMinutes }.averageOrNull()
+        val normalWorkout = normalRows.map { row -> row.workoutMinutes }.averageOrNull()
+        val sleepDelta = highSleep.minusNullable(normalSleep)
+        val stepsDelta = highSteps.minusNullable(normalSteps)
+        val workoutDelta = highWorkout.minusNullable(normalWorkout)
+
+        return TestedInsight(
+            id = "heart_outlier_context",
+            domain = "Puls",
+            title = "Co widac w dniach z wyzszym srednim pulsem?",
+            answer = when {
+                rows.size < 45 -> "Dni z pulsem jest jeszcze za malo, zeby sensownie szukac odchylen od Twojego baseline."
+                highRows.size < 5 -> "Wyzszy sredni puls pojawia sie rzadko, wiec na razie traktujemy go jako liste dni do sprawdzenia, nie trend."
+                sleepDelta != null && sleepDelta <= -30.0 ->
+                    "Dni z wyzszym srednim pulsem wygladaja w dostepnych parach jak dni z krotszym snem. To jest sygnal do dalszego testu, nie dowod przyczyny."
+                stepsDelta != null && stepsDelta >= 1500.0 ->
+                    "Dni z wyzszym srednim pulsem czesciej wygladaja jak dni z wiekszym obciazeniem ruchem. Trzeba rozdzielic trening, stres i jakosc pomiaru."
+                else -> "Sa dni z wyzszym srednim pulsem, ale obecny kontekst snu i aktywnosci nie daje jednego mocnego wyjasnienia."
+            },
+            evidence = listOf(
+                "pokrycie pulsu: ${rows.size} zamknietych dni",
+                "baseline sredniego pulsu: ${baselineAvg.format0()} bpm, prog wysokiego dnia: ${highThreshold.format0()} bpm",
+                "dni wysokiego pulsu: ${highRows.size}",
+                "sredni puls: ${highRows.map { row -> row.avgBpm }.averageOrNull().format0()} vs ${normalRows.map { row -> row.avgBpm }.averageOrNull().format0()} bpm",
+                "sen: ${highSleep.formatMinutes()} vs ${normalSleep.formatMinutes()} (${sleepDelta.formatSigned0()} min)",
+                "kroki: ${highSteps.format0()} vs ${normalSteps.format0()} (${stepsDelta.formatSigned0()})",
+                "trening: ${highWorkout.format0()} min vs ${normalWorkout.format0()} min (${workoutDelta.formatSigned0()} min)",
+            ),
+            dateRange = dateRangeForHeartRows(rows),
+            sampleSize = rows.size,
+            confidence = confidenceForSample(rows.size),
+            limitations = listOf(
+                "to jest sredni dzienny puls, nie puls spoczynkowy",
+                "pokrycie historyczne pulsu jest nierowne",
+                "wysoki puls moze oznaczac trening, stres, chorobe, kofeine albo blad pomiaru",
+                "dzisiejszy czesciowy dzien nie jest uzyty w trendzie",
+            ),
+            nextStep = "dodac osobny test dni z pulsem powyzej baseline plus sen poprzedniej nocy i trening tego dnia",
+        )
+    }
+
     private fun buildWalkingEfficiencyInsight(
         currentStart: LocalDate,
         currentEnd: LocalDate,
@@ -556,11 +621,27 @@ private fun dateRangeForNextDayRows(rows: List<SleepNextDayActivityRow>): String
     return "${rows.first().date} - ${rows.last().date}"
 }
 
+private fun dateRangeForHeartRows(rows: List<HeartContextRow>): String {
+    if (rows.isEmpty()) {
+        return "brak danych"
+    }
+    return "${rows.first().date} - ${rows.last().date}"
+}
+
 private fun <T : Number> List<T>.averageOrNull(): Double? {
     if (isEmpty()) {
         return null
     }
     return map { number -> number.toDouble() }.average()
+}
+
+private fun List<Double>.standardDeviationOrNull(): Double? {
+    if (size < 2) {
+        return null
+    }
+    val mean = average()
+    val variance = sumOf { value -> (value - mean) * (value - mean) } / size
+    return sqrt(variance)
 }
 
 private fun Long.formatSteps(): String {

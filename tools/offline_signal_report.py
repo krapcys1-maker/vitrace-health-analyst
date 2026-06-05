@@ -64,6 +64,7 @@ def build_report(
     lines.extend(activity_section(con, cutoff_date, steps_per_km))
     lines.extend(sleep_section(con, cutoff_date))
     lines.extend(sleep_activity_section(con, cutoff_date))
+    lines.extend(heart_context_section(con, cutoff_date))
     lines.extend(walking_section(con, cutoff_date))
     lines.extend(next_candidates_section())
     return "\n".join(lines).rstrip() + "\n"
@@ -296,6 +297,55 @@ def walking_section(con: sqlite3.Connection, cutoff_date: str) -> list[str]:
     return lines
 
 
+def heart_context_section(con: sqlite3.Connection, cutoff_date: str) -> list[str]:
+    rows = list(
+        con.execute(
+            """
+            SELECT
+                h.date AS date,
+                h.avgBpm AS avgBpm,
+                h.minBpm AS minBpm,
+                h.maxBpm AS maxBpm,
+                h.sampleCount AS sampleCount,
+                COALESCE(a.steps, 0) AS steps,
+                s.totalSleepMinutes AS totalSleepMinutes,
+                s.sleepScore AS sleepScore,
+                COALESCE(w.totalDurationMinutes, 0) AS workoutMinutes
+            FROM daily_heart_summaries h
+            LEFT JOIN daily_activity_summaries a ON a.date = h.date
+            LEFT JOIN sleep_details s ON s.date = h.date
+            LEFT JOIN daily_workout_summaries w ON w.date = h.date
+            WHERE h.date < ? AND h.sampleCount > 0 AND h.avgBpm IS NOT NULL
+            ORDER BY h.date
+            """,
+            (cutoff_date,),
+        )
+    )
+    values = [float(row["avgBpm"]) for row in rows]
+    baseline = average_values(values)
+    std_dev = standard_deviation(values)
+    threshold = baseline + std_dev if baseline is not None and std_dev is not None else None
+    high = [row for row in rows if threshold is not None and row["avgBpm"] >= threshold]
+    normal = [row for row in rows if threshold is not None and row["avgBpm"] < threshold]
+
+    lines = [
+        "## Heart Context",
+        "",
+        f"- Closed heart days: {len(rows)}",
+        f"- Average daily HR baseline: {fmt0(baseline)} bpm",
+        f"- High-day threshold: {fmt0(threshold)} bpm",
+        "",
+        "| Group | Days | Avg HR | Sleep h | Steps | Workout min |",
+        "|---|---:|---:|---:|---:|---:|",
+        heart_group_row("high avg HR", high),
+        heart_group_row("other HR days", normal),
+        "",
+        "Interpretation: this uses daily average heart rate, not resting heart rate. Treat it as context for load/recovery, not a medical signal.",
+        "",
+    ]
+    return lines
+
+
 def next_candidates_section() -> list[str]:
     return [
         "## Next Insight Candidates",
@@ -356,6 +406,26 @@ def sleep_group_row(label: str, rows: list[sqlite3.Row]) -> str:
 def average(rows: list[sqlite3.Row], key: str) -> float | None:
     values = [float(row[key]) for row in rows if row[key] is not None]
     return sum(values) / len(values) if values else None
+
+
+def average_values(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def standard_deviation(values: list[float]) -> float | None:
+    if len(values) < 2:
+        return None
+    mean = sum(values) / len(values)
+    variance = sum((value - mean) ** 2 for value in values) / len(values)
+    return math.sqrt(variance)
+
+
+def heart_group_row(label: str, rows: list[sqlite3.Row]) -> str:
+    return (
+        f"| {label} | {len(rows)} | {fmt0(average(rows, 'avgBpm'))} | "
+        f"{minutes_to_hours(average(rows, 'totalSleepMinutes')):.2f} | "
+        f"{fmt0(average(rows, 'steps'))} | {fmt0(average(rows, 'workoutMinutes'))} |"
+    )
 
 
 def correlation(rows: Iterable[sqlite3.Row], x_key: str, y_key: str) -> float | None:

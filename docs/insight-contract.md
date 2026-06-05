@@ -83,6 +83,7 @@ Allowed deterministic tests now:
 - poor sleep versus next-day activity and heart
 - training day versus non-training day sleep
 - walking efficiency by distance band
+- high average heart-rate days with sleep/activity context
 - personal baseline and outlier days when coverage is enough
 
 Current `tested_insight` scopes:
@@ -93,6 +94,7 @@ Current `tested_insight` scopes:
 - `activity_sleep_same_night`
 - `sleep_next_day_activity`
 - `training_day_sleep`
+- `heart_outlier_context`
 - `walking_efficiency_by_distance_band`
 
 Forbidden conclusions from current data:

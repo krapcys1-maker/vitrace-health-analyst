@@ -423,6 +423,30 @@ interface DailySummaryDao {
     @Query(
         """
         SELECT
+            h.date AS date,
+            h.avgBpm AS avgBpm,
+            h.minBpm AS minBpm,
+            h.maxBpm AS maxBpm,
+            h.sampleCount AS sampleCount,
+            COALESCE(a.steps, 0) AS steps,
+            s.totalSleepMinutes AS totalSleepMinutes,
+            s.sleepScore AS sleepScore,
+            COALESCE(w.totalDurationMinutes, 0) AS workoutMinutes
+        FROM daily_heart_summaries h
+        LEFT JOIN daily_activity_summaries a ON a.date = h.date
+        LEFT JOIN sleep_details s ON s.date = h.date
+        LEFT JOIN daily_workout_summaries w ON w.date = h.date
+        WHERE h.date < :beforeDate
+          AND h.sampleCount > 0
+          AND h.avgBpm IS NOT NULL
+        ORDER BY h.date ASC
+        """
+    )
+    suspend fun heartContextRowsBefore(beforeDate: String): List<HeartContextRow>
+
+    @Query(
+        """
+        SELECT
             CASE
                 WHEN EXISTS (
                     SELECT 1 FROM workout_sessions w
