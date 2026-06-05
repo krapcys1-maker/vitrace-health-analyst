@@ -131,6 +131,8 @@ Current verified audit from 2026-06-05:
 - Sleep: 133 canonical daily reports, 0 bad days.
 - SpO2: 5 canonical daily reports, 0 bad days.
 - Workouts: 303 sessions across 230 days, 0 bad days.
+- Sleep details: 133 expected, 133 actual, 0 bad; all 133 have stages, sleep score, bedtime, and wake time.
+- Workout details: 303 expected, 303 actual, 0 bad; 286 have distance/pace, 303 active calories, 299 average heart rate, 300 max heart rate, 282 cadence, 280 VO2 max, and 281 GPX references.
 
 Before saying the history import is correct, run:
 

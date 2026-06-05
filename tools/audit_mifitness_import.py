@@ -33,8 +33,9 @@ def main() -> None:
 
     aggregated_file = find_one(export_dir, "*hlth_center_aggregated_fitness_data.csv")
     sport_file = find_one(export_dir, "*hlth_center_sport_record.csv")
+    sport_track_file = find_optional(export_dir, "*hlth_center_sport_track_data.csv")
 
-    expected = read_expected(aggregated_file, sport_file, zone)
+    expected = read_expected(aggregated_file, sport_file, sport_track_file, zone)
     actual = read_actual(db_path)
     report = build_report(expected, actual)
 
@@ -49,18 +50,27 @@ def find_one(directory: Path, pattern: str) -> Path:
     return matches[0]
 
 
+def find_optional(directory: Path, pattern: str) -> Path | None:
+    matches = sorted(directory.glob(pattern))
+    return matches[0] if matches else None
+
+
 def read_expected(
     aggregated_file: Path,
     sport_file: Path,
+    sport_track_file: Path | None,
     zone: dt.tzinfo,
 ) -> dict[str, dict[str, Any]]:
     expected: dict[str, dict[str, Any]] = {
         "activity": {},
         "heart": {},
         "sleep": {},
+        "sleep_detail": {},
         "spo2": {},
         "workout": collections.defaultdict(lambda: [0, 0]),
+        "workout_detail": {},
     }
+    gpx_by_key = read_gpx_index(sport_track_file) if sport_track_file else {}
 
     with aggregated_file.open("r", encoding="utf-8-sig", newline="") as handle:
         for row in csv.DictReader(handle):
@@ -85,11 +95,29 @@ def read_expected(
                 )
             elif key == "sleep":
                 expected["sleep"][date] = optional_int(value.get("total_duration")) or 0
+                segments = value.get("segment_details")
+                segment_list = [segment for segment in segments if isinstance(segment, dict)] if isinstance(segments, list) else []
+                bedtimes = [optional_int(segment.get("bedtime")) for segment in segment_list]
+                wake_times = [optional_int(segment.get("wake_up_time")) for segment in segment_list]
+                bedtimes = [item for item in bedtimes if item is not None]
+                wake_times = [item for item in wake_times if item is not None]
+                expected["sleep_detail"][date] = (
+                    optional_int(value.get("total_duration")) or 0,
+                    optional_int(value.get("sleep_deep_duration")),
+                    optional_int(value.get("sleep_light_duration")),
+                    optional_int(value.get("sleep_rem_duration")),
+                    optional_int(value.get("sleep_awake_duration")),
+                    optional_int(value.get("awake_count")),
+                    optional_int(value.get("sleep_score")),
+                    len(segment_list),
+                    min(bedtimes) * 1000 if bedtimes else None,
+                    max(wake_times) * 1000 if wake_times else None,
+                )
             elif key == "spo2":
                 expected["spo2"][date] = optional_float(value.get("avg_spo2"))
 
     with sport_file.open("r", encoding="utf-8-sig", newline="") as handle:
-        for row in csv.DictReader(handle):
+        for index, row in enumerate(csv.DictReader(handle), start=1):
             value = parse_json(row.get("Value"))
             timestamp = int(value.get("start_time") or value.get("time") or row.get("Time") or 0)
             if timestamp <= 0:
@@ -98,6 +126,26 @@ def read_expected(
             duration_seconds = int(float(value.get("duration") or 0))
             expected["workout"][date][0] += 1
             expected["workout"][date][1] += duration_seconds // 60
+            distance = optional_float(value.get("distance")) or 0.0
+            expected["workout_detail"][f"MI_FITNESS_EXPORT:sport_record:{index}"] = (
+                date,
+                normalize_workout_type(value.get("sport_type"), row.get("Category"), row.get("Key")),
+                duration_seconds,
+                distance,
+                optional_float(value.get("calories")) or 0.0,
+                optional_float(value.get("total_cal")),
+                optional_int(value.get("steps")) or 0,
+                optional_float(value.get("avg_hrm")),
+                optional_int(value.get("min_hrm")),
+                optional_int(value.get("max_hrm")),
+                calculate_avg_pace(duration_seconds, distance),
+                optional_int(value.get("min_pace")),
+                optional_int(value.get("max_pace")),
+                optional_float(value.get("avg_cadence")),
+                optional_int(value.get("max_cadence")),
+                optional_float(value.get("vo2_max")),
+                gpx_by_key.get((row.get("Key") or "", timestamp)),
+            )
 
     expected["workout"] = dict(expected["workout"])
     return expected
@@ -107,7 +155,7 @@ def read_actual(db_path: Path) -> dict[str, dict[str, Any]]:
     con = sqlite3.connect(db_path)
     con.row_factory = sqlite3.Row
     try:
-        return {
+        result = {
             "activity": {
                 row["date"]: (
                     row["steps"],
@@ -141,6 +189,7 @@ def read_actual(db_path: Path) -> dict[str, dict[str, Any]]:
                     "FROM daily_sleep_summaries"
                 )
             },
+            "sleep_detail": {},
             "spo2": {
                 row["date"]: (
                     row["latestSpo2Percent"],
@@ -167,8 +216,88 @@ def read_actual(db_path: Path) -> dict[str, dict[str, Any]]:
                     "FROM daily_workout_summaries"
                 )
             },
+            "workout_detail": {},
             "profile": dict(con.execute("SELECT * FROM user_profile").fetchone()),
+            "health_connect_latest": {},
         }
+        if table_exists(con, "sleep_details"):
+            result["sleep_detail"] = {
+                row["date"]: (
+                    row["totalSleepMinutes"],
+                    row["deepSleepMinutes"],
+                    row["lightSleepMinutes"],
+                    row["remSleepMinutes"],
+                    row["awakeMinutes"],
+                    row["awakeCount"],
+                    row["sleepScore"],
+                    row["segmentCount"],
+                    row["bedtimeEpochMs"],
+                    row["wakeUpEpochMs"],
+                )
+                for row in con.execute(
+                    """
+                    SELECT date, totalSleepMinutes, deepSleepMinutes, lightSleepMinutes,
+                           remSleepMinutes, awakeMinutes, awakeCount, sleepScore,
+                           segmentCount, bedtimeEpochMs, wakeUpEpochMs
+                    FROM sleep_details
+                    """
+                )
+            }
+        if table_exists(con, "workout_sessions"):
+            result["workout_detail"] = {
+                row["sessionId"]: (
+                    row["date"],
+                    row["workoutType"],
+                    row["durationSeconds"],
+                    row["distanceMeters"],
+                    row["activeCaloriesKcal"],
+                    row["totalCaloriesKcal"],
+                    row["steps"],
+                    row["avgHeartRateBpm"],
+                    row["minHeartRateBpm"],
+                    row["maxHeartRateBpm"],
+                    row["avgPaceSecondsPerKm"],
+                    row["minPaceSecondsPerKm"],
+                    row["maxPaceSecondsPerKm"],
+                    row["avgCadence"],
+                    row["maxCadence"],
+                    row["vo2Max"],
+                    row["gpxUrl"],
+                )
+                for row in con.execute(
+                    """
+                    SELECT sessionId, date, workoutType, durationSeconds, distanceMeters,
+                           activeCaloriesKcal, totalCaloriesKcal, steps, avgHeartRateBpm,
+                           minHeartRateBpm, maxHeartRateBpm, avgPaceSecondsPerKm,
+                           minPaceSecondsPerKm, maxPaceSecondsPerKm, avgCadence,
+                           maxCadence, vo2Max, gpxUrl
+                    FROM workout_sessions
+                    """
+                )
+            }
+        if table_exists(con, "health_connect_quality_snapshots"):
+            latest_capture = con.execute(
+                "SELECT MAX(capturedAtEpochMs) FROM health_connect_quality_snapshots"
+            ).fetchone()[0]
+            if latest_capture is not None:
+                result["health_connect_latest"] = {
+                    row["metricKey"]: {
+                        "label": row["label"],
+                        "count30d": row["count30d"],
+                        "origins": row["origins"],
+                        "status": row["status"],
+                    }
+                    for row in con.execute(
+                        """
+                        SELECT metricKey, label, count30d, origins, status
+                        FROM health_connect_quality_snapshots
+                        WHERE capturedAtEpochMs = ?
+                        ORDER BY metricKey
+                        """,
+                        (latest_capture,),
+                    )
+                }
+        return result
     finally:
         con.close()
 
@@ -185,11 +314,17 @@ class AuditReport:
         self.heart_extra: dict[str, Any] = {}
         self.sleep_bad: list[Any] = []
         self.sleep_extra: dict[str, Any] = {}
+        self.sleep_detail_bad: list[Any] = []
+        self.sleep_detail_extra: dict[str, Any] = {}
         self.spo2_bad: list[Any] = []
         self.spo2_extra: dict[str, Any] = {}
         self.workout_bad: list[Any] = []
         self.workout_extra: dict[str, Any] = {}
+        self.workout_detail_bad: list[Any] = []
+        self.workout_detail_extra: dict[str, Any] = {}
         self.counts: dict[str, int] = {}
+        self.detail_counts: dict[str, int] = {}
+        self.health_connect_latest: dict[str, Any] = {}
         self.profile: dict[str, Any] = {}
 
     @property
@@ -202,9 +337,13 @@ class AuditReport:
                 self.year_bad,
                 self.heart_bad,
                 self.sleep_bad,
+                self.sleep_detail_bad,
+                self.sleep_detail_extra,
                 self.spo2_bad,
                 self.workout_bad,
                 self.workout_extra,
+                self.workout_detail_bad,
+                self.workout_detail_extra,
             ]
         )
 
@@ -263,6 +402,15 @@ def build_report(expected: dict[str, dict[str, Any]], actual: dict[str, dict[str
     report.sleep_extra = {
         date: value for date, value in actual["sleep"].items() if value[0] and date not in expected["sleep"]
     }
+    for date, expected_value in expected["sleep_detail"].items():
+        actual_value = actual["sleep_detail"].get(date)
+        if actual_value != expected_value:
+            report.sleep_detail_bad.append((date, expected_value, actual_value))
+    report.sleep_detail_extra = {
+        date: value
+        for date, value in actual["sleep_detail"].items()
+        if date not in expected["sleep_detail"]
+    }
 
     for date, expected_value in expected["spo2"].items():
         actual_value = actual["spo2"].get(date)
@@ -281,6 +429,15 @@ def build_report(expected: dict[str, dict[str, Any]], actual: dict[str, dict[str
         for date, value in actual["workout"].items()
         if (value[0] or value[1]) and date not in expected["workout"]
     }
+    for session_id, expected_value in expected["workout_detail"].items():
+        actual_value = actual["workout_detail"].get(session_id)
+        if not workout_detail_close(actual_value, expected_value):
+            report.workout_detail_bad.append((session_id, expected_value, actual_value))
+    report.workout_detail_extra = {
+        session_id: value
+        for session_id, value in actual["workout_detail"].items()
+        if session_id not in expected["workout_detail"]
+    }
 
     report.counts = {
         "activity_days": len(expected["activity"]),
@@ -291,6 +448,26 @@ def build_report(expected: dict[str, dict[str, Any]], actual: dict[str, dict[str
         "workout_sessions": sum(value[0] for value in expected["workout"].values()),
         "body_nonzero_rows": actual["body_count"]["nonzero"],
     }
+    actual_sleep_detail = actual["sleep_detail"]
+    actual_workout_detail = actual["workout_detail"]
+    report.detail_counts = {
+        "sleep_detail_expected": len(expected["sleep_detail"]),
+        "sleep_detail_actual": len(actual_sleep_detail),
+        "sleep_stage_days": sum(1 for value in actual_sleep_detail.values() if value[1] is not None or value[3] is not None),
+        "sleep_score_days": sum(1 for value in actual_sleep_detail.values() if value[6] is not None),
+        "sleep_bed_wake_days": sum(1 for value in actual_sleep_detail.values() if value[8] is not None and value[9] is not None),
+        "workout_detail_expected": len(expected["workout_detail"]),
+        "workout_detail_actual": len(actual_workout_detail),
+        "workout_with_distance": sum(1 for value in actual_workout_detail.values() if value[3] > 0),
+        "workout_with_active_calories": sum(1 for value in actual_workout_detail.values() if value[4] > 0),
+        "workout_with_avg_hr": sum(1 for value in actual_workout_detail.values() if value[7] not in (None, 0)),
+        "workout_with_max_hr": sum(1 for value in actual_workout_detail.values() if value[9] not in (None, 0)),
+        "workout_with_pace": sum(1 for value in actual_workout_detail.values() if value[10] is not None),
+        "workout_with_cadence": sum(1 for value in actual_workout_detail.values() if value[13] is not None or value[14] not in (None, 0)),
+        "workout_with_vo2": sum(1 for value in actual_workout_detail.values() if value[15] not in (None, 0)),
+        "workout_with_gpx": sum(1 for value in actual_workout_detail.values() if value[16]),
+    }
+    report.health_connect_latest = actual["health_connect_latest"]
     report.profile = actual["profile"]
     return report
 
@@ -332,6 +509,15 @@ def print_report(db_path: Path, report: AuditReport, show_months: bool) -> None:
         f"extra_raw_days={len(report.sleep_extra)}"
     )
     print(
+        "Sleep details: "
+        f"expected={report.detail_counts['sleep_detail_expected']} "
+        f"actual={report.detail_counts['sleep_detail_actual']} "
+        f"bad={len(report.sleep_detail_bad)} "
+        f"stage_days={report.detail_counts['sleep_stage_days']} "
+        f"score_days={report.detail_counts['sleep_score_days']} "
+        f"bed_wake_days={report.detail_counts['sleep_bed_wake_days']}"
+    )
+    print(
         "SpO2: "
         f"report_days={report.counts['spo2_report_days']} "
         f"bad={len(report.spo2_bad)} "
@@ -344,6 +530,24 @@ def print_report(db_path: Path, report: AuditReport, show_months: bool) -> None:
         f"bad={len(report.workout_bad)} "
         f"extra_days={len(report.workout_extra)}"
     )
+    print(
+        "Workout details: "
+        f"expected={report.detail_counts['workout_detail_expected']} "
+        f"actual={report.detail_counts['workout_detail_actual']} "
+        f"bad={len(report.workout_detail_bad)} "
+        f"distance={report.detail_counts['workout_with_distance']} "
+        f"active_kcal={report.detail_counts['workout_with_active_calories']} "
+        f"avg_hr={report.detail_counts['workout_with_avg_hr']} "
+        f"max_hr={report.detail_counts['workout_with_max_hr']} "
+        f"pace={report.detail_counts['workout_with_pace']} "
+        f"cadence={report.detail_counts['workout_with_cadence']} "
+        f"vo2={report.detail_counts['workout_with_vo2']} "
+        f"gpx={report.detail_counts['workout_with_gpx']}"
+    )
+    if report.health_connect_latest:
+        print("Latest Health Connect 30-day snapshot:")
+        for key, value in sorted(report.health_connect_latest.items()):
+            print(f"  {key}: count30d={value['count30d']} origins={value['origins']} status={value['status']}")
     print(f"Body rows with data: {report.counts['body_nonzero_rows']}")
     print(f"Profile: {report.profile}")
 
@@ -357,8 +561,10 @@ def print_report(db_path: Path, report: AuditReport, show_months: bool) -> None:
                 "activity_extra": list(sorted(report.activity_extra.items()))[:5],
                 "heart_bad": report.heart_bad[:5],
                 "sleep_bad": report.sleep_bad[:5],
+                "sleep_detail_bad": report.sleep_detail_bad[:5],
                 "spo2_bad": report.spo2_bad[:5],
                 "workout_bad": report.workout_bad[:5],
+                "workout_detail_bad": report.workout_detail_bad[:5],
             }
         )
 
@@ -389,12 +595,80 @@ def optional_float(value: Any) -> float | None:
     return float(value)
 
 
+def table_exists(con: sqlite3.Connection, table_name: str) -> bool:
+    return (
+        con.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table_name,),
+        ).fetchone()[0]
+        > 0
+    )
+
+
+def read_gpx_index(sport_track_file: Path) -> dict[tuple[str, int], str]:
+    result: dict[tuple[str, int], str] = {}
+    with sport_track_file.open("r", encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle):
+            key = row.get("Key") or ""
+            timestamp = optional_int(row.get("Time"))
+            gpx = row.get("GPX")
+            if key and timestamp and gpx:
+                result[(key, timestamp)] = gpx
+    return result
+
+
+def map_workout_type(raw_type: Any) -> str | None:
+    try:
+        sport_type = int(float(raw_type))
+    except (TypeError, ValueError):
+        return None
+    if sport_type == 1:
+        return "running"
+    if sport_type == 2:
+        return "walking"
+    return None
+
+
+def normalize_workout_type(raw_type: Any, category: str | None, key: str | None) -> str:
+    mapped = map_workout_type(raw_type)
+    if mapped is not None:
+        return mapped
+    source = (category or key or "unknown").strip().lower()
+    return "".join(char if char.isalnum() else "_" for char in source).strip("_") or "unknown"
+
+
+def calculate_avg_pace(duration_seconds: int, distance_meters: float) -> int | None:
+    if duration_seconds <= 0 or distance_meters <= 0:
+        return None
+    return round(duration_seconds / (distance_meters / 1000.0))
+
+
 def close(left: float | None, right: float | None, tolerance: float) -> bool:
     if left is None and right is None:
         return True
     if left is None or right is None:
         return False
     return abs(float(left) - float(right)) <= tolerance
+
+
+def workout_detail_close(actual: tuple[Any, ...] | None, expected: tuple[Any, ...]) -> bool:
+    if actual is None:
+        return False
+    if actual[0] != expected[0] or actual[1] != expected[1] or actual[2] != expected[2]:
+        return False
+    numeric_pairs = [
+        (actual[3], expected[3], 0.01),
+        (actual[4], expected[4], 0.01),
+        (actual[5], expected[5], 0.01),
+        (actual[7], expected[7], 0.001),
+        (actual[13], expected[13], 0.001),
+        (actual[15], expected[15], 0.001),
+    ]
+    for left, right, tolerance in numeric_pairs:
+        if not close(left, right, tolerance):
+            return False
+    exact_indexes = [6, 8, 9, 10, 11, 12, 14, 16]
+    return all(actual[index] == expected[index] for index in exact_indexes)
 
 
 def period(values: dict[str, int], prefix_length: int) -> collections.Counter[str]:

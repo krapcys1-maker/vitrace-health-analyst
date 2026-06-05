@@ -16,10 +16,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DailyWorkoutSummaryEntity::class,
         DailyWorkoutTypeSummaryEntity::class,
         DailyBodySummaryEntity::class,
+        SleepDetailEntity::class,
+        WorkoutSessionEntity::class,
         UserProfileEntity::class,
         HealthNoteEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class VitaTraceDatabase : RoomDatabase() {
@@ -187,6 +189,72 @@ abstract class VitaTraceDatabase : RoomDatabase() {
             }
         }
 
+        private val migration5To6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS sleep_details (
+                        date TEXT NOT NULL PRIMARY KEY,
+                        bedtimeEpochMs INTEGER,
+                        wakeUpEpochMs INTEGER,
+                        totalSleepMinutes INTEGER NOT NULL,
+                        deepSleepMinutes INTEGER,
+                        lightSleepMinutes INTEGER,
+                        remSleepMinutes INTEGER,
+                        awakeMinutes INTEGER,
+                        awakeCount INTEGER,
+                        sleepScore INTEGER,
+                        segmentCount INTEGER NOT NULL,
+                        source TEXT NOT NULL,
+                        rawSourceFile TEXT NOT NULL,
+                        rawSourceKey TEXT NOT NULL,
+                        rawTimestampEpochMs INTEGER,
+                        rawPayloadJson TEXT NOT NULL,
+                        syncedAtEpochMs INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS workout_sessions (
+                        sessionId TEXT NOT NULL PRIMARY KEY,
+                        date TEXT NOT NULL,
+                        workoutType TEXT NOT NULL,
+                        sportName TEXT NOT NULL,
+                        rawSportType INTEGER,
+                        startAtEpochMs INTEGER,
+                        endAtEpochMs INTEGER,
+                        durationSeconds INTEGER NOT NULL,
+                        distanceMeters REAL NOT NULL,
+                        activeCaloriesKcal REAL NOT NULL,
+                        totalCaloriesKcal REAL,
+                        steps INTEGER NOT NULL,
+                        avgHeartRateBpm REAL,
+                        minHeartRateBpm INTEGER,
+                        maxHeartRateBpm INTEGER,
+                        avgPaceSecondsPerKm INTEGER,
+                        minPaceSecondsPerKm INTEGER,
+                        maxPaceSecondsPerKm INTEGER,
+                        avgCadence REAL,
+                        maxCadence INTEGER,
+                        trainingEffect REAL,
+                        recoveryTime INTEGER,
+                        vo2Max REAL,
+                        gpxUrl TEXT,
+                        source TEXT NOT NULL,
+                        rawSourceFile TEXT NOT NULL,
+                        rawTimestampEpochMs INTEGER,
+                        rawPayloadJson TEXT NOT NULL,
+                        syncedAtEpochMs INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_sleep_details_date ON sleep_details(date)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_workout_sessions_date ON workout_sessions(date)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_workout_sessions_workoutType_date ON workout_sessions(workoutType, date)")
+            }
+        }
+
         fun get(context: Context): VitaTraceDatabase {
             return instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -198,6 +266,7 @@ abstract class VitaTraceDatabase : RoomDatabase() {
                     .addMigrations(migration2To3)
                     .addMigrations(migration3To4)
                     .addMigrations(migration4To5)
+                    .addMigrations(migration5To6)
                     .build().also { database ->
                     instance = database
                 }

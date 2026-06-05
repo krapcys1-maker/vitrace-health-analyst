@@ -87,6 +87,7 @@ Local Mi Fitness export summary:
 - Public Personal Body Intelligence prompt: `docs/personal-body-intelligence-prompt.md`
 - Public data source comparison: `docs/data-source-comparison.md`
 - Public health journal and lab analysis plan: `docs/health-journal-and-labs.md`
+- Public AI architecture plan: `docs/ai-analysis-architecture.md`
 - Public local importer tool: `tools/import_mifitness_history_to_db.py`
 - Public local import audit tool: `tools/audit_mifitness_import.py`
 - Public living memory: `docs/agent-memory.md`
@@ -129,6 +130,7 @@ Local Mi Fitness export summary:
 | 2026-06-05 | `vitrace/mvp-foundation` | Added local health notes storage and expanded the Health tab into daily journal plus future AI/lab analysis area. | `:app:assembleDebug` passed; APK installed with ADB; Room migrated to version 4 on phone; Health tab UI verified; test note save was verified and no test note remains in the phone DB. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Reworked domain screens to use internal section switches instead of dumping all cards into long vertical scrolls. | `:app:assembleDebug` passed; APK installed with ADB; screenshots/UI dumps verified Health, Sport, and Options section switches on the phone. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Split Sport into `Kroki`, `Chodzenie`, `Bieganie`, and `Analiza`; added workout-type summaries so walking/running come from training records, not step totals. | `:app:assembleDebug` passed; importer rerun; phone DB updated; UI dumps verified Sport/Kroki, Sport/Chodzenie, and Sport/Bieganie with running 4 sessions and 16.3 km in last 30 days. |
+| 2026-06-05 | `vitrace/mvp-foundation` | Added detailed analytical storage for sleep stages and workout sessions; refocused AI placement as an explanation layer over deterministic `AiHealthSummary`, not over UI cards. | `:app:assembleDebug` passed; importer and audit passed; phone DB verified with 133 sleep detail rows and 303 workout sessions after app launch. |
 
 ## Update Protocol
 

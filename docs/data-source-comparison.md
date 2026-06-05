@@ -54,6 +54,20 @@ Positive source coverage:
   - `MI_FITNESS_EXPORT`: 220 positive days.
   - Health Connect live: 0 positive days for weight, VO2 max, and SpO2.
 
+Detailed historical tables:
+
+- Sleep details: 133 rows, all with stages, sleep score, bedtime, and wake time.
+- Workout sessions: 303 rows.
+- Workout detail coverage:
+  - distance: 286 sessions
+  - active calories: 303 sessions
+  - average heart rate: 299 sessions
+  - max heart rate: 300 sessions
+  - calculated average pace: 286 sessions
+  - cadence: 282 sessions
+  - VO2 max: 280 sessions
+  - GPX reference: 281 sessions
+
 Last 30 days in VitaTrace after merge:
 
 - Activity: 30 active days, 276,583 steps, 163.8 km, 11,219 active kcal.
