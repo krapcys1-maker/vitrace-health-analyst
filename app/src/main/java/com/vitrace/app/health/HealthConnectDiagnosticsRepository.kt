@@ -95,6 +95,7 @@ object HealthConnectDiagnosticsRepository {
                 sdkStatus = sdkStatus,
                 grantedPermissionCount = grantedRequired.size,
                 requiredPermissionCount = requiredPermissions.size,
+                permissionsChecked = true,
                 rows = listOf(
                     DiagnosticRow(
                         label = "Permissions",
@@ -138,6 +139,7 @@ object HealthConnectDiagnosticsRepository {
                 sdkStatus = sdkStatus,
                 grantedPermissionCount = requiredPermissions.size,
                 requiredPermissionCount = requiredPermissions.size,
+                permissionsChecked = true,
                 rows = rows,
                 dataQualityItems = qualityItems,
                 dashboard = database.loadDashboard(end),
@@ -149,6 +151,7 @@ object HealthConnectDiagnosticsRepository {
                 sdkStatus = sdkStatus,
                 grantedPermissionCount = requiredPermissions.size,
                 requiredPermissionCount = requiredPermissions.size,
+                permissionsChecked = true,
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
                 dashboard = database.loadDashboard(end),

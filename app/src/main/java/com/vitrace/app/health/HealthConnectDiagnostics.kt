@@ -4,6 +4,7 @@ data class HealthConnectDiagnostics(
     val sdkStatus: HealthConnectSdkStatus,
     val grantedPermissionCount: Int = 0,
     val requiredPermissionCount: Int = 0,
+    val permissionsChecked: Boolean = false,
     val rows: List<DiagnosticRow> = emptyList(),
     val dataQualityItems: List<DataQualityItem> = emptyList(),
     val dashboard: HealthDashboard? = null,
@@ -12,7 +13,7 @@ data class HealthConnectDiagnostics(
     val error: String? = null,
 ) {
     val hasAllPermissions: Boolean
-        get() = requiredPermissionCount > 0 && grantedPermissionCount == requiredPermissionCount
+        get() = permissionsChecked && requiredPermissionCount > 0 && grantedPermissionCount == requiredPermissionCount
 }
 
 enum class HealthConnectSdkStatus {

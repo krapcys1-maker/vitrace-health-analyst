@@ -56,6 +56,7 @@ Health Connect probe/sync later --------------------+
 ```
 
 The database is the source of truth. Raw payloads stay local and allow importer fixes later.
+The product direction for this analysis layer lives in `docs/analytics-product-plan.md`.
 
 ## Planned Data Sources
 
@@ -151,3 +152,4 @@ Each meaningful feature should include:
 - update to `docs/agent-memory.md`
 
 Historical data import rules live in `docs/historical-data-import.md`. Raw Mi Fitness exports stay private and must not be committed.
+The first deterministic analysis rules live in `app/src/main/java/com/vitrace/app/analysis/` and should stay separate from Compose UI.

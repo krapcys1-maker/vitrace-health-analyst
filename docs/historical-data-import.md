@@ -47,7 +47,16 @@ This keeps dashboard, desktop sync, and future AI summaries independent from the
 
 ## Next Implementation Step
 
-Create a private local importer command or Android import screen that can read a small sanitized fixture first. After tests pass, run the importer on the private export and compare:
+Implementation should happen in stages:
+
+1. Create sanitized sample fixtures with a few fake rows for each supported file shape.
+2. Build JVM parser tests for Mi Fitness CSV and workout metadata.
+3. Add staging tables or staging models that preserve source file, source key, raw timestamp, unit, and parsed value.
+4. Normalize staging rows into the existing daily summary tables.
+5. Run the importer on the private export locally only.
+6. Compare imported aggregates against Mi Fitness visible totals and the existing export profile.
+
+After tests pass, run the importer on the private export and compare:
 
 - imported date range
 - total active days
@@ -55,3 +64,23 @@ Create a private local importer command or Android import screen that can read a
 - heart samples by day
 - sleep sessions by day
 - workout sessions and GPX count
+
+## Initial Mapping Targets
+
+`hlth_center_fitness_data.csv`:
+
+- `steps` -> `daily_activity_summaries.steps`
+- activity/distance keys, when confidently identified -> `daily_activity_summaries.distanceMeters`
+- active movement calories only -> `daily_activity_summaries.activeCaloriesKcal`
+- `heart_rate` and resting heart keys -> `daily_heart_summaries`
+- `watch_night_sleep` and related sleep keys -> `daily_sleep_summaries`
+- `weight` -> `daily_body_summaries.latestWeightKg`
+- `vo2_max` -> `daily_body_summaries.latestVo2Max`
+- `single_spo2` -> `daily_body_summaries.latestSpo2Percent`
+
+Workout files:
+
+- session date, duration, distance, calories, average heart rate, cadence -> `daily_workout_summaries`
+- GPX paths remain local route detail and should not be sent to AI.
+
+Unclear fields must be imported with uncertainty flags or skipped until verified.

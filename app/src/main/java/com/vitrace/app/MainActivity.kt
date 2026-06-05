@@ -8,9 +8,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -19,6 +21,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,8 +38,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
+import com.vitrace.app.analysis.AnalysisBlock
+import com.vitrace.app.analysis.buildVitaTraceAnalysis
 import com.vitrace.app.health.ActivityWindow
 import com.vitrace.app.health.DataQualityItem
 import com.vitrace.app.health.DailySyncSummary
@@ -82,6 +88,7 @@ private fun HealthConnectScreen() {
     val scope = rememberCoroutineScope()
     var diagnostics by remember { mutableStateOf<HealthConnectDiagnostics?>(null) }
     var loading by remember { mutableStateOf(false) }
+    var selectedTab by remember { mutableStateOf(AppTab.Dashboard) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = PermissionController.createRequestPermissionResultContract(),
@@ -116,25 +123,30 @@ private fun HealthConnectScreen() {
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Header()
-        ActionSection(
-            diagnostics = diagnostics,
-            loading = loading,
-            onRequestPermissions = {
-                val openedSettings = openHealthConnectPermissions(context)
-                if (!openedSettings) {
-                    permissionLauncher.launch(HealthConnectDiagnosticsRepository.requiredPermissions)
-                }
-            },
-            onRefresh = { refresh(syncFromHealthConnect = true) },
+        TabSection(
+            selectedTab = selectedTab,
+            onSelectTab = { tab -> selectedTab = tab },
         )
-        diagnostics?.error?.let { error ->
-            SyncNotice(error)
+        when (selectedTab) {
+            AppTab.Dashboard -> DashboardTab(
+                diagnostics = diagnostics,
+                loading = loading,
+                onRefresh = { refresh(syncFromHealthConnect = true) },
+            )
+            AppTab.Analysis -> AnalysisTab(dashboard = diagnostics?.dashboard)
+            AppTab.Data -> DataTab(
+                diagnostics = diagnostics,
+                loading = loading,
+                onRequestPermissions = {
+                    val openedSettings = openHealthConnectPermissions(context)
+                    if (!openedSettings) {
+                        permissionLauncher.launch(HealthConnectDiagnosticsRepository.requiredPermissions)
+                    }
+                },
+                onRefresh = { refresh(syncFromHealthConnect = true) },
+            )
+            AppTab.Profile -> ProfileTab()
         }
-        DashboardSection(dashboard = diagnostics?.dashboard, loading = loading)
-        StatusSection(diagnostics = diagnostics, loading = loading)
-        DailySyncSection(summary = diagnostics?.dailySyncSummary)
-        DataQualitySection(items = diagnostics?.dataQualityItems.orEmpty())
-        RowsSection(rows = diagnostics?.rows.orEmpty())
     }
 }
 
@@ -171,6 +183,142 @@ private fun Header() {
 }
 
 @Composable
+private fun TabSection(
+    selectedTab: AppTab,
+    onSelectTab: (AppTab) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            AppTab.entries.forEach { tab ->
+                if (tab == selectedTab) {
+                    Button(
+                        onClick = { onSelectTab(tab) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                    ) {
+                        Text(
+                            text = tab.label,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = { onSelectTab(tab) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                    ) {
+                        Text(
+                            text = tab.label,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DashboardTab(
+    diagnostics: HealthConnectDiagnostics?,
+    loading: Boolean,
+    onRefresh: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Button(
+            onClick = onRefresh,
+            enabled = !loading,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (loading) "Synchronizuje..." else "Synchronizuj Health Connect")
+        }
+        diagnostics?.error?.let { error ->
+            SyncNotice(error)
+        }
+        DashboardSection(dashboard = diagnostics?.dashboard, loading = loading)
+    }
+}
+
+@Composable
+private fun AnalysisTab(dashboard: HealthDashboard?) {
+    val report = buildVitaTraceAnalysis(dashboard)
+
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        SectionTitle("Analiza")
+        AnalysisCard(
+            title = "Co VitaTrace ma robic lepiej niz Mi Fitness",
+            lines = listOf(
+                "trend wobec Twojej historii, nie tylko dzisiejszy wynik",
+                "ocena czy dane sa kompletne i wiarygodne",
+                "wnioski z polaczenia snu, pulsu, aktywnosci i treningow",
+            ),
+            quality = DiagnosticQuality.Good,
+        )
+        AnalysisCard(report.readiness)
+        AnalysisCard(report.currentInsight)
+        AnalysisCard(report.historyPlan)
+    }
+}
+
+@Composable
+private fun DataTab(
+    diagnostics: HealthConnectDiagnostics?,
+    loading: Boolean,
+    onRequestPermissions: () -> Unit,
+    onRefresh: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        ActionSection(
+            diagnostics = diagnostics,
+            loading = loading,
+            onRequestPermissions = onRequestPermissions,
+            onRefresh = onRefresh,
+        )
+        diagnostics?.error?.let { error ->
+            SyncNotice(error)
+        }
+        StatusSection(diagnostics = diagnostics, loading = loading)
+        DailySyncSection(summary = diagnostics?.dailySyncSummary)
+        DataQualitySection(items = diagnostics?.dataQualityItems.orEmpty())
+        RowsSection(rows = diagnostics?.rows.orEmpty())
+    }
+}
+
+@Composable
+private fun ProfileTab() {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        SectionTitle("Profil i prywatnosc")
+        AnalysisCard(
+            title = "Rola aplikacji",
+            lines = listOf(
+                "VitaTrace analizuje dane lokalnie w bazie telefonu",
+                "Health Connect i Mi Fitness export sa zrodlami danych",
+                "AI pozniej dostanie tylko agregaty po Twojej zgodzie",
+            ),
+            quality = DiagnosticQuality.Neutral,
+        )
+        AnalysisCard(
+            title = "Historia z Mi Fitness",
+            lines = listOf(
+                "surowe eksporty zostaja prywatne",
+                "import trafi do tych samych dziennych tabel co Health Connect",
+                "GPX i trasy zostana lokalne",
+            ),
+            quality = DiagnosticQuality.Good,
+        )
+    }
+}
+
+@Composable
 private fun StatusSection(
     diagnostics: HealthConnectDiagnostics?,
     loading: Boolean,
@@ -195,9 +343,17 @@ private fun StatusSection(
             },
         )
         InfoRow(
-            label = "Permissions",
-            value = diagnostics?.let { "${it.grantedPermissionCount}/${it.requiredPermissionCount}" } ?: "pending",
-            quality = if (diagnostics?.hasAllPermissions == true) DiagnosticQuality.Good else DiagnosticQuality.Warning,
+            label = "Zgody",
+            value = when {
+                diagnostics == null -> "pending"
+                !diagnostics.permissionsChecked -> "niesprawdzone"
+                else -> "${diagnostics.grantedPermissionCount}/${diagnostics.requiredPermissionCount}"
+            },
+            quality = when {
+                diagnostics?.permissionsChecked != true -> DiagnosticQuality.Neutral
+                diagnostics.hasAllPermissions -> DiagnosticQuality.Good
+                else -> DiagnosticQuality.Warning
+            },
         )
     }
 }
@@ -377,6 +533,49 @@ private fun CoverageCard(
 }
 
 @Composable
+private fun AnalysisCard(
+    block: AnalysisBlock,
+) {
+    AnalysisCard(
+        title = block.title,
+        lines = block.lines,
+        quality = block.quality,
+    )
+}
+
+@Composable
+private fun AnalysisCard(
+    title: String,
+    lines: List<String>,
+    quality: DiagnosticQuality,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = Color(0xFF0F172A),
+                fontWeight = FontWeight.Bold,
+            )
+            lines.forEach { line ->
+                Text(
+                    text = line,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (quality == DiagnosticQuality.Warning) Color(0xFF92400E) else Color(0xFF475569),
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun CompactMetricRow(
     label: String,
     value: String,
@@ -418,14 +617,14 @@ private fun ActionSection(
             enabled = !loading,
             modifier = Modifier.weight(1f),
         ) {
-            Text("Refresh")
+            Text("Odswiez")
         }
         Button(
             onClick = onRequestPermissions,
             enabled = !loading && diagnostics?.sdkStatus == HealthConnectSdkStatus.Available,
             modifier = Modifier.weight(1f),
         ) {
-            Text("Permissions")
+            Text("Zgody")
         }
     }
 }
@@ -447,27 +646,27 @@ private fun DailySyncSection(summary: DailySyncSummary?) {
             quality = if (summary.lastSyncedAt == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
         )
         InfoRow(
-            label = "Activity days",
+            label = "Dni aktywne",
             value = summary.activityDays.toString(),
             quality = summary.activityDays.qualityForCount(),
         )
         InfoRow(
-            label = "Heart days",
+            label = "Dni z pulsem",
             value = summary.heartDays.toString(),
             quality = summary.heartDays.qualityForCount(),
         )
         InfoRow(
-            label = "Sleep days",
+            label = "Dni snu",
             value = summary.sleepDays.toString(),
             quality = summary.sleepDays.qualityForCount(),
         )
         InfoRow(
-            label = "Workout days",
+            label = "Dni treningow",
             value = summary.workoutDays.toString(),
             quality = summary.workoutDays.qualityForCount(),
         )
         InfoRow(
-            label = "Body days",
+            label = "Dni ciala",
             value = summary.bodyDays.toString(),
             quality = summary.bodyDays.qualityForCount(),
         )
@@ -641,6 +840,13 @@ private fun DataQualityItem.statusLabel(): String {
         count30d > 0 -> "records found"
         else -> "no records"
     }
+}
+
+private enum class AppTab(val label: String) {
+    Dashboard("Start"),
+    Analysis("Analiza"),
+    Data("Dane"),
+    Profile("Profil"),
 }
 
 private fun HealthConnectSdkStatus.label(): String {
