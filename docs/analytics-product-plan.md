@@ -140,6 +140,8 @@ Example insights:
 
 Only show these when data coverage and sample size are sufficient.
 
+Sleep screens should include monthly averages for total sleep, REM, deep sleep, light sleep, awake time, sleep score, bedtime/wake-time regularity, sample size, and source coverage. Sleep analysis should compare high-activity days versus lower-activity days and report percent/minute differences for REM, deep sleep, light sleep, total sleep, and sleep score with confidence.
+
 ## Body Composition Analytics
 
 Future body inputs should support:
@@ -200,6 +202,8 @@ VitaTrace should detect:
 
 VO2 max may appear in Mi Fitness history even if Health Connect does not currently expose it. Historical import must therefore preserve VO2 max when present in export files.
 
+Sport screens should show trends by month/week for steps, estimated kilometers, walking workouts, running workouts, pace, heart rate, cadence, VO2 max, active calories, calories per kilometer, and calories per minute. AI may explain what a run or month likely means for the user's body profile only after the deterministic engine calculates the comparison, sample size, and confidence.
+
 ## Correlation Confidence Rules
 
 - Less than 14 comparable days: do not show correlation insight.
@@ -229,6 +233,8 @@ AI receives a compact `AiHealthSummary` and writes:
 - possible interpretation
 - limitations
 - practical next steps
+
+The detailed screen and module architecture lives in `docs/personal-analytics-architecture.md`.
 
 Allowed language:
 

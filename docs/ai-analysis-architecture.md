@@ -27,6 +27,24 @@ plain-language report in Analiza / Zdrowie
 
 The app UI should call an `AnalysisContextBuilder` or equivalent service. The UI should not assemble prompts from cards.
 
+The deterministic engine owns all calculations:
+
+- monthly sleep phase averages
+- monthly sport trends
+- calories per kilometer and calories per minute
+- same-effort running/walking comparison
+- high-activity versus low-activity sleep comparison
+- body-composition correlations when future weight/fat/muscle data exists
+
+AI owns only explanation:
+
+- what the calculated pattern may mean
+- how strong or weak the evidence is
+- which data is missing
+- what the user can test next
+
+The fuller module and UI design is in `docs/personal-analytics-architecture.md`.
+
 ## What AI May Receive
 
 AI may receive a compact `AiHealthSummary` built from local tables:

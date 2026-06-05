@@ -88,6 +88,7 @@ Local Mi Fitness export summary:
 - Public data source comparison: `docs/data-source-comparison.md`
 - Public health journal and lab analysis plan: `docs/health-journal-and-labs.md`
 - Public AI architecture plan: `docs/ai-analysis-architecture.md`
+- Public personal analytics architecture: `docs/personal-analytics-architecture.md`
 - Public local importer tool: `tools/import_mifitness_history_to_db.py`
 - Public local import audit tool: `tools/audit_mifitness_import.py`
 - Public living memory: `docs/agent-memory.md`
@@ -100,7 +101,7 @@ Local Mi Fitness export summary:
 4. Add parser/importer tests and audits for sleep stages, sleep score, workout sessions, pace, calories, heart rate, cadence, VO2 max, yearly/monthly step totals, and estimated kilometers.
 5. Re-run the private export import and verify counts manually before trusting analysis.
 6. Keep the useful long-term step/km stats because Mi Fitness does not expose them well.
-7. Only after detailed import is verified, build deterministic analysis context and correlation confidence rules.
+7. Only after detailed import is verified, build deterministic analysis context and correlation confidence rules. Start with monthly sleep phase averages, monthly sport trends, high-activity versus low-activity sleep comparison, running/walking cardio efficiency, and calorie efficiency.
 8. Then redesign the UI around insights, with domain tabs as drill-down rather than the product core.
 9. Add AI only after deterministic analytics can produce a compact `AiHealthSummary`.
 
