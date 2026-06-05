@@ -47,6 +47,7 @@ Local Mi Fitness export summary:
 - Local database is the source of truth.
 - Android app now has an initial Room database (`vitrace.db`) with Health Connect quality snapshots.
 - Room now includes normalized daily summary tables for activity, heart, sleep, workouts, and body metrics.
+- The first Android dashboard reads from local daily summary tables, not directly from Health Connect.
 - AI is not the first milestone.
 - Future AI may use DeepSeek only with aggregated summaries and explicit user consent.
 - Future photo/scan imports need an architectural opening now, but OCR is not part of MVP.
@@ -67,10 +68,10 @@ Local Mi Fitness export summary:
 
 ## Next Recommended Steps
 
-1. Add a real dashboard backed by local daily summaries.
-2. Add sample/sanitized CSV fixtures that contain no private health data.
-3. Build parser and importer tests before importing the full private export.
-4. Implement Mi Fitness historical import into the normalized daily summary tables.
+1. Add sample/sanitized CSV fixtures that contain no private health data.
+2. Build parser and importer tests before importing the full private export.
+3. Implement Mi Fitness historical import into the normalized daily summary tables.
+4. Improve dashboard layout after it has real historical data.
 5. Turn Health Connect quality snapshots into a fuller source reliability screen.
 6. Add background sync after foreground sync remains stable.
 
@@ -86,6 +87,7 @@ Local Mi Fitness export summary:
 | 2026-06-05 | `vitrace/mvp-foundation` | Fixed Health Connect diagnostics: removed total/basal calories from the activity view and kept active calories only. | `:app:assembleDebug` passed; APK installed with ADB and screenshot verified. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Added Room and a Health Connect Data Quality screen that records per-metric 1/7/30-day counts, origins, and last record timestamps. | `:app:assembleDebug` passed; APK installed with ADB; screenshots/UI dump verified on device. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Added normalized daily summary tables and foreground Health Connect sync for the last 30 days; documented historical import rules. | `:app:assembleDebug` passed; APK installed with ADB; UI verified on device with local daily summary counts. |
+| 2026-06-05 | `vitrace/mvp-foundation` | Added first local-database dashboard with Today, 7-day, 30-day activity windows and signal coverage. | `:app:assembleDebug` passed; APK installed with ADB; dashboard screenshot/UI dump verified on device. |
 
 ## Update Protocol
 

@@ -21,6 +21,7 @@ import com.vitrace.app.data.DailyBodySummaryEntity
 import com.vitrace.app.data.DailyHeartSummaryEntity
 import com.vitrace.app.data.DailySleepSummaryEntity
 import com.vitrace.app.data.DailyWorkoutSummaryEntity
+import com.vitrace.app.data.DashboardActivityAggregate
 import com.vitrace.app.data.HealthConnectQualitySnapshotEntity
 import com.vitrace.app.data.VitaTraceDatabase
 import java.time.Duration
@@ -60,19 +61,20 @@ object HealthConnectDiagnosticsRepository {
     suspend fun load(context: Context): HealthConnectDiagnostics {
         val database = VitaTraceDatabase.get(context)
         val sdkStatus = getSdkStatus(context)
+        val end = Instant.now()
         if (sdkStatus != HealthConnectSdkStatus.Available) {
             return HealthConnectDiagnostics(
                 sdkStatus = sdkStatus,
                 requiredPermissionCount = requiredPermissions.size,
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
+                dashboard = database.loadDashboard(end),
             )
         }
 
         val client = HealthConnectClient.getOrCreate(context)
         val granted = client.permissionController.getGrantedPermissions()
         val grantedRequired = granted.intersect(requiredPermissions)
-        val end = Instant.now()
 
         if (!granted.containsAll(requiredPermissions)) {
             return HealthConnectDiagnostics(
@@ -91,6 +93,7 @@ object HealthConnectDiagnosticsRepository {
                 },
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
+                dashboard = database.loadDashboard(end),
             )
         }
 
@@ -123,6 +126,7 @@ object HealthConnectDiagnosticsRepository {
                 requiredPermissionCount = requiredPermissions.size,
                 rows = rows,
                 dataQualityItems = qualityItems,
+                dashboard = database.loadDashboard(end),
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
             )
@@ -133,6 +137,7 @@ object HealthConnectDiagnosticsRepository {
                 requiredPermissionCount = requiredPermissions.size,
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
+                dashboard = database.loadDashboard(end),
                 error = error.message ?: error::class.java.simpleName,
             )
         }
@@ -478,6 +483,40 @@ object HealthConnectDiagnosticsRepository {
             workoutDays = dao.workoutDays(),
             bodyDays = dao.bodyDays(),
             lastSyncedAt = lastSyncedAt,
+        )
+    }
+
+    private suspend fun VitaTraceDatabase.loadDashboard(now: Instant): HealthDashboard {
+        val zone = ZoneId.systemDefault()
+        val today = LocalDate.now(zone)
+        val dao = dailySummaryDao()
+        val todayActivity = dao.activityForDate(today.toString())
+        val last7Days = dao.activitySince(today.minusDays(6).toString())
+        val last30Days = dao.activitySince(today.minusDays(29).toString())
+        val signals = dao.signalCountsSince(today.minusDays(29).toString())
+        val lastSyncedAt = dao.lastSyncedAtEpochMs()
+            ?.let { epochMs -> Instant.ofEpochMilli(epochMs).formatLocal() }
+
+        return HealthDashboard(
+            today = todayActivity.toActivityWindow(),
+            last7Days = last7Days.toActivityWindow(),
+            last30Days = last30Days.toActivityWindow(),
+            signalCounts = DashboardSignalCounts(
+                heartDays = signals.heartDays,
+                sleepDays = signals.sleepDays,
+                workoutDays = signals.workoutDays,
+                bodyDays = signals.bodyDays,
+            ),
+            lastSyncedAt = lastSyncedAt ?: now.formatLocal(),
+        )
+    }
+
+    private fun DashboardActivityAggregate.toActivityWindow(): ActivityWindow {
+        return ActivityWindow(
+            steps = steps,
+            distanceKm = distanceMeters / 1000.0,
+            activeCaloriesKcal = activeCaloriesKcal,
+            daysWithActivity = daysWithActivity,
         )
     }
 

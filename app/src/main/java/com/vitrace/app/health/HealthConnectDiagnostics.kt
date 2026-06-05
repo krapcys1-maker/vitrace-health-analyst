@@ -6,6 +6,7 @@ data class HealthConnectDiagnostics(
     val requiredPermissionCount: Int = 0,
     val rows: List<DiagnosticRow> = emptyList(),
     val dataQualityItems: List<DataQualityItem> = emptyList(),
+    val dashboard: HealthDashboard? = null,
     val savedSnapshotCount: Int = 0,
     val dailySyncSummary: DailySyncSummary? = null,
     val error: String? = null,
@@ -47,6 +48,28 @@ data class DailySyncSummary(
     val workoutDays: Int,
     val bodyDays: Int,
     val lastSyncedAt: String?,
+)
+
+data class HealthDashboard(
+    val today: ActivityWindow,
+    val last7Days: ActivityWindow,
+    val last30Days: ActivityWindow,
+    val signalCounts: DashboardSignalCounts,
+    val lastSyncedAt: String?,
+)
+
+data class ActivityWindow(
+    val steps: Long,
+    val distanceKm: Double,
+    val activeCaloriesKcal: Double,
+    val daysWithActivity: Int,
+)
+
+data class DashboardSignalCounts(
+    val heartDays: Int,
+    val sleepDays: Int,
+    val workoutDays: Int,
+    val bodyDays: Int,
 )
 
 enum class DiagnosticQuality {

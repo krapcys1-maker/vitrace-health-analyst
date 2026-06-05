@@ -34,10 +34,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
+import com.vitrace.app.health.ActivityWindow
 import com.vitrace.app.health.DataQualityItem
 import com.vitrace.app.health.DailySyncSummary
 import com.vitrace.app.health.DiagnosticQuality
 import com.vitrace.app.health.DiagnosticRow
+import com.vitrace.app.health.HealthDashboard
 import com.vitrace.app.health.HealthConnectDiagnostics
 import com.vitrace.app.health.HealthConnectDiagnosticsRepository
 import com.vitrace.app.health.HealthConnectSdkStatus
@@ -108,7 +110,6 @@ private fun HealthConnectScreen() {
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Header()
-        StatusSection(diagnostics = diagnostics, loading = loading)
         ActionSection(
             diagnostics = diagnostics,
             loading = loading,
@@ -120,6 +121,8 @@ private fun HealthConnectScreen() {
             },
             onRefresh = { refresh() },
         )
+        DashboardSection(dashboard = diagnostics?.dashboard, loading = loading)
+        StatusSection(diagnostics = diagnostics, loading = loading)
         DailySyncSection(summary = diagnostics?.dailySyncSummary)
         DataQualitySection(items = diagnostics?.dataQualityItems.orEmpty())
         RowsSection(rows = diagnostics?.rows.orEmpty())
@@ -154,7 +157,7 @@ private fun Header() {
             color = Color(0xFF0F172A),
         )
         Text(
-            text = "Health Connect data quality",
+            text = "Personal health dashboard",
             style = MaterialTheme.typography.titleMedium,
             color = Color(0xFF475569),
         )
@@ -170,6 +173,7 @@ private fun StatusSection(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        SectionTitle("Health Connect")
         InfoRow(
             label = "SDK",
             value = when {
@@ -190,6 +194,85 @@ private fun StatusSection(
             quality = if (diagnostics?.hasAllPermissions == true) DiagnosticQuality.Good else DiagnosticQuality.Warning,
         )
     }
+}
+
+@Composable
+private fun DashboardSection(
+    dashboard: HealthDashboard?,
+    loading: Boolean,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        SectionTitle("Dashboard")
+        if (dashboard == null) {
+            InfoRow(
+                label = "Status",
+                value = if (loading) "syncing" else "pending",
+                quality = DiagnosticQuality.Neutral,
+            )
+            return
+        }
+
+        InfoRow(
+            label = "Last sync",
+            value = dashboard.lastSyncedAt ?: "none",
+            quality = if (dashboard.lastSyncedAt == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
+        )
+        ActivityWindowSection(title = "Today", window = dashboard.today)
+        ActivityWindowSection(title = "7 days", window = dashboard.last7Days)
+        ActivityWindowSection(title = "30 days", window = dashboard.last30Days)
+        SectionTitle("Signal coverage")
+        InfoRow(
+            label = "Heart days",
+            value = dashboard.signalCounts.heartDays.toString(),
+            quality = dashboard.signalCounts.heartDays.qualityForCount(),
+        )
+        InfoRow(
+            label = "Sleep days",
+            value = dashboard.signalCounts.sleepDays.toString(),
+            quality = dashboard.signalCounts.sleepDays.qualityForCount(),
+        )
+        InfoRow(
+            label = "Workout days",
+            value = dashboard.signalCounts.workoutDays.toString(),
+            quality = dashboard.signalCounts.workoutDays.qualityForCount(),
+        )
+        InfoRow(
+            label = "Body days",
+            value = dashboard.signalCounts.bodyDays.toString(),
+            quality = dashboard.signalCounts.bodyDays.qualityForCount(),
+        )
+    }
+}
+
+@Composable
+private fun ActivityWindowSection(
+    title: String,
+    window: ActivityWindow,
+) {
+    SectionTitle(title)
+    InfoRow(
+        label = "Steps",
+        value = window.steps.toString(),
+        quality = window.steps.qualityForCount(),
+    )
+    InfoRow(
+        label = "Active kcal",
+        value = "${window.activeCaloriesKcal.format0()} kcal",
+        quality = window.activeCaloriesKcal.qualityForPositive(),
+    )
+    InfoRow(
+        label = "Distance",
+        value = "${window.distanceKm.format1()} km",
+        quality = window.distanceKm.qualityForPositive(),
+    )
+    InfoRow(
+        label = "Active days",
+        value = window.daysWithActivity.toString(),
+        quality = window.daysWithActivity.qualityForCount(),
+    )
 }
 
 @Composable
@@ -416,6 +499,18 @@ private fun InfoRow(
 private fun Int.qualityForCount(): DiagnosticQuality {
     return if (this > 0) DiagnosticQuality.Good else DiagnosticQuality.Warning
 }
+
+private fun Long.qualityForCount(): DiagnosticQuality {
+    return if (this > 0L) DiagnosticQuality.Good else DiagnosticQuality.Warning
+}
+
+private fun Double.qualityForPositive(): DiagnosticQuality {
+    return if (this > 0.0) DiagnosticQuality.Good else DiagnosticQuality.Warning
+}
+
+private fun Double.format0(): String = "%,.0f".format(this)
+
+private fun Double.format1(): String = "%,.1f".format(this)
 
 private fun DataQualityItem.statusLabel(): String {
     return when {

@@ -84,6 +84,8 @@ Activity:
 - active days
 - training sessions
 
+The Android dashboard must read these from VitaTrace local daily summary tables, not directly from Health Connect. Health Connect and historical imports are input sources; the local normalized database is the dashboard source.
+
 Cardio:
 
 - heart rate samples
