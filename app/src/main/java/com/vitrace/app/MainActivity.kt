@@ -23,7 +23,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -59,14 +58,10 @@ import com.vitrace.app.analysis.buildVitaTraceAnalysis
 import com.vitrace.app.data.UserProfileEntity
 import com.vitrace.app.health.ActivityWindow
 import com.vitrace.app.health.BodyDomainSummary
-import com.vitrace.app.health.DataQualityItem
-import com.vitrace.app.health.DailySyncSummary
 import com.vitrace.app.health.DiagnosticQuality
-import com.vitrace.app.health.DiagnosticRow
 import com.vitrace.app.health.HealthDashboard
 import com.vitrace.app.health.HealthConnectDiagnostics
 import com.vitrace.app.health.HealthConnectDiagnosticsRepository
-import com.vitrace.app.health.HealthConnectSdkStatus
 import com.vitrace.app.health.HealthJournalSummary
 import com.vitrace.app.health.LongTermActivitySummary
 import com.vitrace.app.health.SleepDomainSummary
@@ -218,10 +213,6 @@ private fun DataRealityScreen(
         return
     }
 
-    diagnostics.error?.let { error ->
-        SyncNotice(error)
-    }
-
     val insights = diagnostics.insights
     var selectedSection by remember { mutableStateOf(InsightSection.Summary) }
     val sectionInsights = insights.filterForSection(selectedSection)
@@ -252,13 +243,6 @@ private fun DataRealityScreen(
     sectionInsights.forEach { insight ->
         InsightCard(insight)
     }
-
-    ActionSection(
-        diagnostics = diagnostics,
-        loading = loading,
-        onRequestPermissions = onRequestPermissions,
-        onRefresh = onRefresh,
-    )
 }
 
 private enum class InsightSection(
@@ -304,12 +288,6 @@ private enum class InsightSection(
         emptyTitle = "Brak treningu",
         emptyText = "Nie ma jeszcze gotowych wnioskow o treningu.",
     ),
-    Data(
-        label = "Dane",
-        domains = setOf("Dane"),
-        emptyTitle = "Brak danych",
-        emptyText = "Nie ma jeszcze gotowego wniosku o pokryciu danych.",
-    ),
 }
 
 @Composable
@@ -324,7 +302,7 @@ private fun InsightSectionTabs(
     ) {
         listOf(
             listOf(InsightSection.Summary, InsightSection.Activity, InsightSection.Sleep),
-            listOf(InsightSection.Heart, InsightSection.Training, InsightSection.Data),
+            listOf(InsightSection.Heart, InsightSection.Training),
         ).forEach { row ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -631,231 +609,6 @@ private fun CompactMetricRow(
     }
 }
 
-@Composable
-private fun ActionSection(
-    diagnostics: HealthConnectDiagnostics?,
-    loading: Boolean,
-    onRequestPermissions: () -> Unit,
-    onRefresh: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Button(
-            onClick = onRefresh,
-            enabled = !loading,
-            modifier = Modifier.weight(1f),
-        ) {
-            Text("Odswiez")
-        }
-        Button(
-            onClick = onRequestPermissions,
-            enabled = !loading && diagnostics?.sdkStatus == HealthConnectSdkStatus.Available,
-            modifier = Modifier.weight(1f),
-        ) {
-            Text("Zgody")
-        }
-    }
-}
-
-@Composable
-private fun DailySyncSection(summary: DailySyncSummary?) {
-    if (summary == null) {
-        return
-    }
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        SectionTitle("Lokalna baza")
-        InfoRow(
-            label = "Ostatnia sync",
-            value = summary.lastSyncedAt ?: "none",
-            quality = if (summary.lastSyncedAt == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
-        )
-        InfoRow(
-            label = "Dni aktywne",
-            value = summary.activityDays.toString(),
-            quality = summary.activityDays.qualityForCount(),
-        )
-        InfoRow(
-            label = "Dni z pulsem",
-            value = summary.heartDays.toString(),
-            quality = summary.heartDays.qualityForCount(),
-        )
-        InfoRow(
-            label = "Dni snu",
-            value = summary.sleepDays.toString(),
-            quality = summary.sleepDays.qualityForCount(),
-        )
-        InfoRow(
-            label = "Dni treningow",
-            value = summary.workoutDays.toString(),
-            quality = summary.workoutDays.qualityForCount(),
-        )
-        InfoRow(
-            label = "Dni dodatkowe",
-            value = summary.bodyDays.toString(),
-            quality = summary.bodyDays.qualityForCount(),
-        )
-    }
-}
-
-@Composable
-private fun RowsSection(rows: List<DiagnosticRow>) {
-    if (rows.isEmpty()) {
-        return
-    }
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        SectionTitle("Activity summary")
-        rows.forEachIndexed { index, row ->
-            if (index > 0) {
-                HorizontalDivider(color = Color(0xFFE2E8F0))
-            }
-            InfoRow(label = row.label, value = row.value, quality = row.quality)
-        }
-    }
-}
-
-@Composable
-private fun DataQualitySection(items: List<DataQualityItem>) {
-    if (items.isEmpty()) {
-        return
-    }
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        SectionTitle("Jakosc zrodel")
-        items.forEachIndexed { index, item ->
-            if (index > 0) {
-                HorizontalDivider(color = Color(0xFFE2E8F0))
-            }
-            DataQualityRow(item)
-        }
-    }
-}
-
-@Composable
-private fun DataQualityRow(item: DataQualityItem) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                text = item.label,
-                style = MaterialTheme.typography.bodyLarge,
-                color = Color(0xFF334155),
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = "1d ${item.count1d} | 7d ${item.count7d} | 30d ${item.count30d}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFF64748B),
-            )
-        }
-        Text(
-            text = item.statusLabel(),
-            modifier = Modifier.padding(start = 12.dp),
-            style = MaterialTheme.typography.bodyMedium,
-            color = item.quality.color(),
-            fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.End,
-        )
-    }
-}
-
-@Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleMedium,
-        color = Color(0xFF0F172A),
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
-    )
-}
-
-@Composable
-private fun SyncNotice(message: String) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFBEB)),
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = "Sync Health Connect",
-                style = MaterialTheme.typography.titleSmall,
-                color = Color(0xFF92400E),
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFF92400E),
-            )
-        }
-    }
-}
-
-@Composable
-private fun InfoRow(
-    label: String,
-    value: String,
-    quality: DiagnosticQuality,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyLarge,
-            color = Color(0xFF334155),
-        )
-        Text(
-            text = value,
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 12.dp),
-            style = MaterialTheme.typography.bodyLarge,
-            color = quality.color(),
-            fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.End,
-        )
-    }
-}
-
-private fun Int.qualityForCount(): DiagnosticQuality {
-    return if (this > 0) DiagnosticQuality.Good else DiagnosticQuality.Warning
-}
-
-private fun Long.qualityForCount(): DiagnosticQuality {
-    return if (this > 0L) DiagnosticQuality.Good else DiagnosticQuality.Warning
-}
-
 private fun Int.toDayLabel(): String {
     return when (this) {
         0 -> "brak dni"
@@ -1054,23 +807,6 @@ private fun AnalysisConfidence.watchColor(): Color {
         AnalysisConfidence.Low -> Color(0xFFFFD60A)
         AnalysisConfidence.Medium -> Color(0xFF30D158)
         AnalysisConfidence.High -> Color(0xFF32D74B)
-    }
-}
-
-private fun DataQualityItem.statusLabel(): String {
-    return when {
-        !hasPermission -> "no permission"
-        count30d > 0 -> "records found"
-        else -> "no records"
-    }
-}
-
-private fun HealthConnectSdkStatus.label(): String {
-    return when (this) {
-        HealthConnectSdkStatus.Available -> "available"
-        HealthConnectSdkStatus.NotInstalled -> "install/update"
-        HealthConnectSdkStatus.NotSupported -> "not supported"
-        HealthConnectSdkStatus.Unknown -> "unknown"
     }
 }
 

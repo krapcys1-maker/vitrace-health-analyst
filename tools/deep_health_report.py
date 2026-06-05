@@ -46,6 +46,7 @@ def build_report(con: sqlite3.Connection, db_path: Path, cutoff_date: str) -> st
     walking_years = credible_walking_by_year(con, cutoff_date)
     fitness_walking_years = fitness_walking_by_year(con, cutoff_date)
     running = running_summary(con, cutoff_date)
+    intensity = exercise_intensity_summary(con, cutoff_date)
     sleep_activity = sleep_activity_tests(con, cutoff_date)
     sleep_windows = sleep_debt_windows(con, cutoff_date)
     heart = heart_context(con, cutoff_date)
@@ -66,7 +67,7 @@ def build_report(con: sqlite3.Connection, db_path: Path, cutoff_date: str) -> st
     lines.extend(executive_findings(activity_years, activity_months, walking_years, fitness_walking_years, running, sleep_activity, sleep_windows, heart, steps_per_km))
     lines.extend(coverage_section(coverage))
     lines.extend(activity_section(activity_years, activity_months, steps_per_km))
-    lines.extend(walking_section(walking_years, fitness_walking_years))
+    lines.extend(walking_section(walking_years, fitness_walking_years, intensity))
     lines.extend(running_section(running))
     lines.extend(sleep_section(sleep_months, sleep_windows, sleep_activity))
     lines.extend(heart_section(heart))
@@ -238,7 +239,11 @@ def activity_section(years: list[sqlite3.Row], months_by_steps: list[sqlite3.Row
     return lines
 
 
-def walking_section(walking_years: list[sqlite3.Row], fitness_years: list[sqlite3.Row]) -> list[str]:
+def walking_section(
+    walking_years: list[sqlite3.Row],
+    fitness_years: list[sqlite3.Row],
+    intensity: list[sqlite3.Row],
+) -> list[str]:
     lines = [
         "## Chodzenie: najlepszy sygnal kondycji",
         "",
@@ -279,6 +284,20 @@ def walking_section(walking_years: list[sqlite3.Row], fitness_years: list[sqlite
     lines.extend([
         "",
         "Wniosek: dla aplikacji to powinien byc osobny modul `wydolnosc chodzenia`: porownuj tylko podobne dystanse, pokazuj tempo + HR + kcal/km, a nie losowe sumy miesieczne.",
+        "",
+        "Intensywnosc wedlug sredniego HR sesji dla profilu 40 lat, max HR okolo 180 bpm:",
+        "",
+        "| Typ | Sesje z HR | Niska | Umiarkowana | Wysoka | Sredni HR |",
+        "|---|---:|---:|---:|---:|---:|",
+    ])
+    for row in intensity:
+        lines.append(
+            f"| {row['workoutType']} | {row['sessions']} | {row['low_sessions']} | "
+            f"{row['moderate_sessions']} | {row['vigorous_sessions']} | {fmt1(row['avg_hr'])} |"
+        )
+    lines.extend([
+        "",
+        "Uwaga: to jest klasyfikacja po srednim HR calej sesji. Prawdziwe minuty w strefach wymagaja danych punktowych z tetna podczas treningu.",
         "",
     ])
     return lines
@@ -524,6 +543,28 @@ def running_summary(con: sqlite3.Connection, cutoff_date: str) -> dict[str, dict
         "old": period("date between '2023-01-01' and '2023-12-31'"),
         "recent": period("date between '2026-01-01' and '2026-12-31'"),
     }
+
+
+def exercise_intensity_summary(con: sqlite3.Connection, cutoff_date: str) -> list[sqlite3.Row]:
+    return list(con.execute(
+        """
+        select workoutType,
+               count(*) as sessions,
+               sum(case when avgHeartRateBpm < 90 then 1 else 0 end) as low_sessions,
+               sum(case when avgHeartRateBpm >= 90 and avgHeartRateBpm < 126 then 1 else 0 end) as moderate_sessions,
+               sum(case when avgHeartRateBpm >= 126 then 1 else 0 end) as vigorous_sessions,
+               avg(avgHeartRateBpm) as avg_hr
+        from workout_sessions
+        where date < ?
+          and avgHeartRateBpm is not null
+          and avgHeartRateBpm between 40 and 210
+          and durationSeconds between 300 and 21600
+        group by workoutType
+        having sessions >= 3
+        order by sessions desc
+        """,
+        (cutoff_date,),
+    ))
 
 
 def sleep_by_month(con: sqlite3.Connection, cutoff_date: str) -> list[sqlite3.Row]:
