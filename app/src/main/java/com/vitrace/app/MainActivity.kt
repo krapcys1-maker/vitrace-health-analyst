@@ -223,18 +223,33 @@ private fun DataRealityScreen(
     }
 
     val insights = diagnostics.insights
+    var selectedSection by remember { mutableStateOf(InsightSection.Summary) }
+    val sectionInsights = insights.filterForSection(selectedSection)
 
     RealityHeroCard(
-        title = "Feed wnioskow",
-        answer = "Najpierw odpowiedz i pewnosc. Dowody, ograniczenia i nastepny test sa pod szczegolami.",
+        title = "Wnioski",
+        answer = "Wybierz obszar i czytaj tylko konkretne analizy.",
         evidence = listOf(
             "wnioski: ${insights.size}",
             "wysoka pewnosc: ${insights.count { insight -> insight.confidence == AnalysisConfidence.High }}",
-            "za mala probka: ${insights.count { insight -> insight.confidence == AnalysisConfidence.Insufficient }}",
         ),
     )
 
-    insights.forEach { insight ->
+    InsightSectionTabs(
+        selectedSection = selectedSection,
+        onSelect = { section -> selectedSection = section },
+        insights = insights,
+    )
+
+    if (sectionInsights.isEmpty()) {
+        AnalysisCard(
+            title = selectedSection.emptyTitle,
+            lines = listOf(selectedSection.emptyText),
+            quality = DiagnosticQuality.Neutral,
+        )
+    }
+
+    sectionInsights.forEach { insight ->
         InsightCard(insight)
     }
 
@@ -244,6 +259,132 @@ private fun DataRealityScreen(
         onRequestPermissions = onRequestPermissions,
         onRefresh = onRefresh,
     )
+}
+
+private enum class InsightSection(
+    val label: String,
+    val domains: Set<String>,
+    val priorityIds: Set<String> = emptySet(),
+    val emptyTitle: String,
+    val emptyText: String,
+) {
+    Summary(
+        label = "Najwazniejsze",
+        domains = emptySet(),
+        priorityIds = setOf(
+            "long_term_steps_km",
+            "sleep_debt_window",
+            "heart_outlier_context",
+            "walking_efficiency_by_distance_band",
+        ),
+        emptyTitle = "Brak priorytetow",
+        emptyText = "Najpierw trzeba przeliczyc lokalne insighty.",
+    ),
+    Activity(
+        label = "Aktywnosc",
+        domains = setOf("Aktywnosc"),
+        emptyTitle = "Brak aktywnosci",
+        emptyText = "Nie ma jeszcze gotowych wnioskow o krokach i kilometrach.",
+    ),
+    Sleep(
+        label = "Sen",
+        domains = setOf("Sen", "Regeneracja"),
+        emptyTitle = "Brak snu",
+        emptyText = "Nie ma jeszcze gotowych wnioskow o snie.",
+    ),
+    Heart(
+        label = "Puls",
+        domains = setOf("Puls"),
+        emptyTitle = "Brak pulsu",
+        emptyText = "Nie ma jeszcze gotowych wnioskow o pulsie.",
+    ),
+    Training(
+        label = "Trening",
+        domains = setOf("Trening"),
+        emptyTitle = "Brak treningu",
+        emptyText = "Nie ma jeszcze gotowych wnioskow o treningu.",
+    ),
+    Data(
+        label = "Dane",
+        domains = setOf("Dane"),
+        emptyTitle = "Brak danych",
+        emptyText = "Nie ma jeszcze gotowego wniosku o pokryciu danych.",
+    ),
+}
+
+@Composable
+private fun InsightSectionTabs(
+    selectedSection: InsightSection,
+    onSelect: (InsightSection) -> Unit,
+    insights: List<TestedInsight>,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        listOf(
+            listOf(InsightSection.Summary, InsightSection.Activity, InsightSection.Sleep),
+            listOf(InsightSection.Heart, InsightSection.Training, InsightSection.Data),
+        ).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                row.forEach { section ->
+                    SectionButton(
+                        section = section,
+                        selected = section == selectedSection,
+                        count = insights.filterForSection(section).size,
+                        onClick = { onSelect(section) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionButton(
+    section: InsightSection,
+    selected: Boolean,
+    count: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val label = "${section.label} $count"
+    if (selected) {
+        Button(
+            onClick = onClick,
+            modifier = modifier,
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+        ) {
+            Text(
+                text = label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    } else {
+        OutlinedButton(
+            onClick = onClick,
+            modifier = modifier,
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+        ) {
+            Text(
+                text = label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+private fun List<TestedInsight>.filterForSection(section: InsightSection): List<TestedInsight> {
+    return when (section) {
+        InsightSection.Summary -> filter { insight -> insight.id in section.priorityIds }
+        else -> filter { insight -> insight.domain in section.domains }
+    }
 }
 
 @Composable
