@@ -17,8 +17,11 @@ from analysis_rules import (
     LONG_WALK_SLEEP_MIN_DISTANCE_KM,
     ActivityMonth,
     ActivityMonthSignal,
+    SleepWindow,
+    SleepWindowComparison,
     WalkingBandTrend,
     classify_activity_months,
+    compare_sleep_window_to_baseline,
     compare_latest_walking_band_years,
 )
 
@@ -64,6 +67,7 @@ def build_report(con: sqlite3.Connection, db_path: Path, cutoff_date: str) -> st
     sleep_activity = sleep_activity_tests(con, cutoff_date)
     long_walk_sleep = sleep_after_long_walks(con, cutoff_date)
     sleep_windows = sleep_debt_windows(con, cutoff_date)
+    sleep_window_comparisons = compare_sleep_windows(sleep_windows)
     heart = heart_context(con, cutoff_date)
     coverage = data_coverage(con, cutoff_date)
 
@@ -79,12 +83,12 @@ def build_report(con: sqlite3.Connection, db_path: Path, cutoff_date: str) -> st
         "",
     ]
 
-    lines.extend(executive_findings(activity_years, activity_months, walking_years, fitness_walking_years, walking_band_trends, running, sleep_activity, long_walk_sleep, sleep_windows, heart, steps_per_km))
+    lines.extend(executive_findings(activity_years, activity_months, walking_years, fitness_walking_years, walking_band_trends, running, sleep_activity, long_walk_sleep, sleep_windows, sleep_window_comparisons, heart, steps_per_km))
     lines.extend(coverage_section(coverage))
     lines.extend(activity_section(activity_years, activity_months, steps_per_km))
     lines.extend(walking_section(walking_years, fitness_walking_years, walking_band_trends, intensity))
     lines.extend(running_section(running))
-    lines.extend(sleep_section(sleep_months, sleep_windows, sleep_activity, long_walk_sleep))
+    lines.extend(sleep_section(sleep_months, sleep_windows, sleep_window_comparisons, sleep_activity, long_walk_sleep))
     lines.extend(heart_section(heart))
     lines.extend(product_section())
     lines.extend(reference_section())
@@ -102,6 +106,7 @@ def executive_findings(
     sleep_activity: dict[str, object],
     long_walk_sleep: dict[str, object],
     sleep_windows: dict[str, object],
+    sleep_window_comparisons: list[SleepWindowComparison],
     heart: dict[str, object],
     steps_per_km: int,
 ) -> list[str]:
@@ -190,10 +195,13 @@ def executive_findings(
     last30 = sleep_windows["last30"]
     baseline = sleep_windows["baseline"]
     if last30 and baseline:
+        last30_comparison = next((item for item in sleep_window_comparisons if item.window.label == "last30"), None)
+        suffix = f" Wniosek: {last30_comparison.interpretation}." if last30_comparison else ""
         findings.append(
             f"8. Sen nie wyglada teraz na katastrofe: ostatnie 30 zmierzonych nocy to {minutes_h(last30['total'])}, "
             f"czyli {signed_minutes(last30['total'] - baseline['total'])} wobec baseline. "
             f"Gleboki sen jest {signed_minutes(last30['deep'] - baseline['deep'])}, REM {signed_minutes(last30['rem'] - baseline['rem'])}."
+            f"{suffix}"
         )
 
     if heart["high"] and heart["normal"]:
@@ -395,6 +403,7 @@ def running_section(running: dict[str, object]) -> list[str]:
 def sleep_section(
     months: list[sqlite3.Row],
     windows: dict[str, object],
+    window_comparisons: list[SleepWindowComparison],
     sleep_activity: dict[str, object],
     long_walk_sleep: dict[str, object],
 ) -> list[str]:
@@ -415,15 +424,21 @@ def sleep_section(
         "",
         "Ostatnie zmierzone noce kontra poprzedni baseline:",
         "",
-        "| Okno | Noce | Sen | Zmiana snu | REM | Gleboki | Score |",
-        "|---|---:|---:|---:|---:|---:|---:|",
+        "| Okno | Noce | Sen | Zmiana snu | REM | Gleboki | Score | Pewnosc | Wniosek |",
+        "|---|---:|---:|---:|---:|---:|---:|---|---|",
     ])
-    baseline = windows["baseline"]
-    for key, label in (("last7", "ostatnie 7"), ("last14", "ostatnie 14"), ("last30", "ostatnie 30")):
-        row = windows[key]
+    for comparison in window_comparisons:
+        row = windows[comparison.window.label]
+        label = {
+            "last7": "ostatnie 7",
+            "last14": "ostatnie 14",
+            "last30": "ostatnie 30",
+        }.get(comparison.window.label, comparison.window.label)
         lines.append(
-            f"| {label} | {row['nights']} | {minutes_h(row['total'])} | {signed_minutes(row['total'] - baseline['total'])} | "
-            f"{signed_minutes(row['rem'] - baseline['rem'])} | {signed_minutes(row['deep'] - baseline['deep'])} | {fmt1(row['score'])} |"
+            f"| {label} | {row['nights']} | {minutes_h(row['total'])} | {signed_minutes(comparison.total_minutes_delta)} | "
+            f"{signed_minutes(comparison.rem_minutes_delta)} | {signed_minutes(comparison.deep_minutes_delta)} | "
+            f"{fmt1(row['score'])} ({fmt_signed_number(comparison.score_delta)}) | {confidence_pl(comparison.confidence)} | "
+            f"{comparison.interpretation} |"
         )
     same = sleep_activity["same_day"]
     previous = sleep_activity["previous_day"]
@@ -706,6 +721,27 @@ def sleep_debt_windows(con: sqlite3.Connection, cutoff_date: str) -> dict[str, d
         "last14": aggregate_sleep_window(rows[:14]),
         "last30": aggregate_sleep_window(rows[:30]),
     }
+
+
+def compare_sleep_windows(windows: dict[str, dict[str, float]]) -> list[SleepWindowComparison]:
+    baseline = sleep_window_from_dict("baseline", windows["baseline"])
+    return [
+        compare_sleep_window_to_baseline(sleep_window_from_dict(label, windows[label]), baseline)
+        for label in ("last7", "last14", "last30")
+    ]
+
+
+def sleep_window_from_dict(label: str, row: dict[str, float]) -> SleepWindow:
+    return SleepWindow(
+        label=label,
+        nights=int(row["nights"] or 0),
+        total_minutes=row.get("total"),
+        rem_minutes=row.get("rem"),
+        deep_minutes=row.get("deep"),
+        light_minutes=row.get("light"),
+        awake_minutes=row.get("awake"),
+        score=row.get("score"),
+    )
 
 
 def sleep_activity_tests(con: sqlite3.Connection, cutoff_date: str) -> dict[str, dict[str, object]]:

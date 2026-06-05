@@ -84,6 +84,32 @@ class WalkingBandTrend:
     interpretation: str
 
 
+@dataclass(frozen=True)
+class SleepWindow:
+    label: str
+    nights: int
+    total_minutes: float | None
+    rem_minutes: float | None
+    deep_minutes: float | None
+    light_minutes: float | None
+    awake_minutes: float | None
+    score: float | None
+
+
+@dataclass(frozen=True)
+class SleepWindowComparison:
+    window: SleepWindow
+    baseline: SleepWindow
+    confidence: str
+    total_minutes_delta: float | None
+    rem_minutes_delta: float | None
+    deep_minutes_delta: float | None
+    light_minutes_delta: float | None
+    awake_minutes_delta: float | None
+    score_delta: float | None
+    interpretation: str
+
+
 def classify_activity_months(
     months: list[ActivityMonth],
     *,
@@ -256,6 +282,106 @@ def compare_latest_walking_band_years(
             )
         )
     return trends
+
+
+def compare_sleep_window_to_baseline(
+    window: SleepWindow,
+    baseline: SleepWindow,
+    *,
+    min_window_nights: int = 5,
+    min_baseline_nights: int = 30,
+) -> SleepWindowComparison:
+    deltas = {
+        "total_minutes": numeric_delta(window.total_minutes, baseline.total_minutes),
+        "rem_minutes": numeric_delta(window.rem_minutes, baseline.rem_minutes),
+        "deep_minutes": numeric_delta(window.deep_minutes, baseline.deep_minutes),
+        "light_minutes": numeric_delta(window.light_minutes, baseline.light_minutes),
+        "awake_minutes": numeric_delta(window.awake_minutes, baseline.awake_minutes),
+        "score": numeric_delta(window.score, baseline.score),
+    }
+    confidence = sleep_window_confidence(
+        window,
+        baseline,
+        min_window_nights=min_window_nights,
+        min_baseline_nights=min_baseline_nights,
+    )
+    return SleepWindowComparison(
+        window=window,
+        baseline=baseline,
+        confidence=confidence,
+        total_minutes_delta=deltas["total_minutes"],
+        rem_minutes_delta=deltas["rem_minutes"],
+        deep_minutes_delta=deltas["deep_minutes"],
+        light_minutes_delta=deltas["light_minutes"],
+        awake_minutes_delta=deltas["awake_minutes"],
+        score_delta=deltas["score"],
+        interpretation=sleep_window_interpretation(confidence, deltas),
+    )
+
+
+def sleep_window_confidence(
+    window: SleepWindow,
+    baseline: SleepWindow,
+    *,
+    min_window_nights: int,
+    min_baseline_nights: int,
+) -> str:
+    if window.nights < min_window_nights or baseline.nights < min_baseline_nights:
+        return "Insufficient"
+    if window.nights >= 14 and baseline.nights >= 60:
+        return "High"
+    if window.nights >= 7 and baseline.nights >= min_baseline_nights:
+        return "Medium"
+    return "Low"
+
+
+def sleep_window_interpretation(
+    confidence: str,
+    deltas: dict[str, float | None],
+) -> str:
+    if confidence == "Insufficient":
+        return "za mala probka, pokazac bez wniosku"
+
+    total_delta = deltas["total_minutes"]
+    rem_delta = deltas["rem_minutes"]
+    deep_delta = deltas["deep_minutes"]
+    score_delta = deltas["score"]
+
+    if total_delta is None:
+        return "brak dlugosci snu, nie da sie ocenic okna"
+
+    weak_parts: list[str] = []
+    strong_parts: list[str] = []
+    if total_delta <= -30:
+        weak_parts.append("sen krotszy o co najmniej 30 min")
+    elif total_delta >= 30:
+        strong_parts.append("sen dluzszy o co najmniej 30 min")
+
+    if score_delta is not None:
+        if score_delta <= -5:
+            weak_parts.append("score wyraznie nizej")
+        elif score_delta >= 5:
+            strong_parts.append("score wyraznie wyzej")
+
+    if deep_delta is not None:
+        if deep_delta <= -10:
+            weak_parts.append("mniej snu glebokiego")
+        elif deep_delta >= 10:
+            strong_parts.append("wiecej snu glebokiego")
+
+    if rem_delta is not None:
+        if rem_delta <= -10:
+            weak_parts.append("mniej REM")
+        elif rem_delta >= 10:
+            strong_parts.append("wiecej REM")
+
+    if weak_parts and strong_parts:
+        return "mieszany sygnal: " + "; ".join(weak_parts + strong_parts)
+    if weak_parts:
+        return "slabsza regeneracja vs baseline: " + "; ".join(weak_parts)
+    if strong_parts:
+        return "lepsza regeneracja vs baseline: " + "; ".join(strong_parts)
+    return "blisko baseline, bez duzej zmiany"
 
 
 def walking_band_year_from_row(row: object) -> WalkingBandYear:

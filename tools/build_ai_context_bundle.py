@@ -17,8 +17,11 @@ from analysis_rules import (
     HEART_MIN_DAILY_SAMPLES,
     LONG_WALK_SLEEP_MIN_DISTANCE_KM,
     ActivityMonth,
+    SleepWindow,
+    SleepWindowComparison,
     WalkingBandTrend,
     classify_activity_months,
+    compare_sleep_window_to_baseline,
     compare_latest_walking_band_years,
 )
 
@@ -182,6 +185,7 @@ def deterministic_engine_facts(
     return {
         "activityOverTime": activity_over_time_facts(con, generated_for_date, steps_per_km),
         "walkingFitness": walking_fitness_facts(con, generated_for_date),
+        "sleepBaseline": sleep_baseline_facts(con, generated_for_date),
         "sleepAfterLongWalks": sleep_after_long_walks_facts(con, generated_for_date),
         "heartLoad": heart_load_facts(con, generated_for_date),
     }
@@ -399,6 +403,91 @@ def numeric_delta(current: object, previous: object) -> float | None:
     if current is None or previous is None:
         return None
     return round(float(current) - float(previous), 1)
+
+
+def sleep_baseline_facts(con: sqlite3.Connection, generated_for_date: str) -> dict[str, Any]:
+    try:
+        rows = list(
+            con.execute(
+                """
+                select date,
+                       totalSleepMinutes as totalSleepMinutes,
+                       remSleepMinutes as remSleepMinutes,
+                       deepSleepMinutes as deepSleepMinutes,
+                       lightSleepMinutes as lightSleepMinutes,
+                       awakeMinutes as awakeMinutes,
+                       sleepScore as sleepScore
+                from sleep_details
+                where date < ? and totalSleepMinutes > 0
+                order by date desc
+                """,
+                (generated_for_date,),
+            )
+        )
+    except sqlite3.OperationalError:
+        return {"available": False, "reason": "sleep table unavailable"}
+
+    windows = {
+        "baseline": sleep_window("baseline", rows[30:120]),
+        "last7": sleep_window("last7", rows[:7]),
+        "last14": sleep_window("last14", rows[:14]),
+        "last30": sleep_window("last30", rows[:30]),
+    }
+    baseline = windows["baseline"]
+    comparisons = [
+        compare_sleep_window_to_baseline(windows[label], baseline)
+        for label in ("last7", "last14", "last30")
+    ]
+    return {
+        "available": bool(rows),
+        "closedDayRule": f"uses sleep dates before {generated_for_date}",
+        "baselineWindow": sleep_window_to_dict(baseline),
+        "comparisons": [sleep_comparison_to_dict(item) for item in comparisons],
+        "interpretationGuard": "wearable sleep stages are estimates; compare against personal baseline first",
+    }
+
+
+def sleep_window(label: str, rows: list[sqlite3.Row]) -> SleepWindow:
+    return SleepWindow(
+        label=label,
+        nights=len(rows),
+        total_minutes=rounded_average(rows, "totalSleepMinutes"),
+        rem_minutes=rounded_average(rows, "remSleepMinutes"),
+        deep_minutes=rounded_average(rows, "deepSleepMinutes"),
+        light_minutes=rounded_average(rows, "lightSleepMinutes"),
+        awake_minutes=rounded_average(rows, "awakeMinutes"),
+        score=rounded_average(rows, "sleepScore"),
+    )
+
+
+def sleep_comparison_to_dict(comparison: SleepWindowComparison) -> dict[str, Any]:
+    return {
+        "window": sleep_window_to_dict(comparison.window),
+        "baseline": sleep_window_to_dict(comparison.baseline),
+        "confidence": comparison.confidence,
+        "deltas": {
+            "totalSleepMinutes": comparison.total_minutes_delta,
+            "remSleepMinutes": comparison.rem_minutes_delta,
+            "deepSleepMinutes": comparison.deep_minutes_delta,
+            "lightSleepMinutes": comparison.light_minutes_delta,
+            "awakeMinutes": comparison.awake_minutes_delta,
+            "sleepScore": comparison.score_delta,
+        },
+        "interpretation": comparison.interpretation,
+    }
+
+
+def sleep_window_to_dict(window: SleepWindow) -> dict[str, Any]:
+    return {
+        "label": window.label,
+        "nights": window.nights,
+        "totalSleepMinutes": window.total_minutes,
+        "remSleepMinutes": window.rem_minutes,
+        "deepSleepMinutes": window.deep_minutes,
+        "lightSleepMinutes": window.light_minutes,
+        "awakeMinutes": window.awake_minutes,
+        "sleepScore": window.score,
+    }
 
 
 def sleep_after_long_walks_facts(con: sqlite3.Connection, generated_for_date: str) -> dict[str, Any]:

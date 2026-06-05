@@ -62,6 +62,12 @@ class BuildAiContextBundleCliTest(unittest.TestCase):
         self.assertEqual(walking_band_trends[0]["current"]["period"], "2026")
         self.assertEqual(walking_band_trends[0]["previous"]["period"], "2025")
         self.assertEqual(walking_band_trends[0]["confidence"], "Insufficient")
+        sleep_baseline = bundle["engineFacts"]["sleepBaseline"]
+        self.assertTrue(sleep_baseline["available"])
+        self.assertEqual(sleep_baseline["baselineWindow"]["nights"], 0)
+        self.assertEqual(sleep_baseline["comparisons"][0]["window"]["label"], "last7")
+        self.assertEqual(sleep_baseline["comparisons"][0]["confidence"], "Insufficient")
+        self.assertIn("wearable sleep stages", sleep_baseline["interpretationGuard"])
         sleep_after_walks = bundle["engineFacts"]["sleepAfterLongWalks"]
         self.assertEqual(sleep_after_walks["thresholdKm"], 8.0)
         self.assertEqual(sleep_after_walks["longWalkSleep"]["days"], 1)

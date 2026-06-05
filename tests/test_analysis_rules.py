@@ -4,8 +4,10 @@ import unittest
 
 from tools.analysis_rules import (
     ActivityMonth,
+    SleepWindow,
     WalkingBandYear,
     classify_activity_months,
+    compare_sleep_window_to_baseline,
     compare_latest_walking_band_years,
     evaluate_walking_session,
 )
@@ -145,6 +147,30 @@ class WalkingBandTrendTest(unittest.TestCase):
 
         self.assertEqual(trends[0].confidence, "Insufficient")
         self.assertIn("za mala probka", trends[0].interpretation)
+
+
+class SleepWindowComparisonTest(unittest.TestCase):
+    def test_detects_weaker_recent_sleep_against_baseline(self) -> None:
+        baseline = SleepWindow("baseline", 90, 430.0, 75.0, 70.0, 270.0, 15.0, 74.0)
+        recent = SleepWindow("last14", 14, 385.0, 58.0, 55.0, 255.0, 18.0, 66.0)
+
+        comparison = compare_sleep_window_to_baseline(recent, baseline)
+
+        self.assertEqual(comparison.confidence, "High")
+        self.assertEqual(comparison.total_minutes_delta, -45.0)
+        self.assertEqual(comparison.rem_minutes_delta, -17.0)
+        self.assertEqual(comparison.deep_minutes_delta, -15.0)
+        self.assertEqual(comparison.score_delta, -8.0)
+        self.assertIn("slabsza regeneracja", comparison.interpretation)
+
+    def test_marks_sleep_window_insufficient_when_baseline_is_too_small(self) -> None:
+        baseline = SleepWindow("baseline", 10, 430.0, 75.0, 70.0, 270.0, 15.0, 74.0)
+        recent = SleepWindow("last7", 4, 420.0, 72.0, 68.0, 265.0, 16.0, 73.0)
+
+        comparison = compare_sleep_window_to_baseline(recent, baseline)
+
+        self.assertEqual(comparison.confidence, "Insufficient")
+        self.assertIn("za mala probka", comparison.interpretation)
 
 
 if __name__ == "__main__":
