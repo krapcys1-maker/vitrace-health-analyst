@@ -152,7 +152,7 @@ object HealthConnectDiagnosticsRepository {
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
                 dashboard = database.loadDashboard(end),
-                error = error.message ?: error::class.java.simpleName,
+                error = error.toUserMessage(),
             )
         }
     }
@@ -593,6 +593,16 @@ object HealthConnectDiagnosticsRepository {
     private fun Double.format0(): String = "%,.0f".format(this)
 
     private fun Double.format1(): String = "%,.1f".format(this)
+
+    private fun Throwable.toUserMessage(): String {
+        val text = message.orEmpty()
+        return when {
+            text.contains("quota", ignoreCase = true) ->
+                "Limit Health Connect na chwile zostal przekroczony. Pokazuje dane z lokalnej bazy; odswiez ponownie pozniej."
+            else ->
+                "Nie udalo sie teraz zsynchronizowac Health Connect. Pokazuje dane z lokalnej bazy."
+        }
+    }
 }
 
 private data class MetricSpec<T : Record>(

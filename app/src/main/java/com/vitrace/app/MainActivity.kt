@@ -127,14 +127,14 @@ private fun HealthConnectScreen() {
             },
             onRefresh = { refresh(syncFromHealthConnect = true) },
         )
+        diagnostics?.error?.let { error ->
+            SyncNotice(error)
+        }
         DashboardSection(dashboard = diagnostics?.dashboard, loading = loading)
         StatusSection(diagnostics = diagnostics, loading = loading)
         DailySyncSection(summary = diagnostics?.dailySyncSummary)
         DataQualitySection(items = diagnostics?.dataQualityItems.orEmpty())
         RowsSection(rows = diagnostics?.rows.orEmpty())
-        diagnostics?.error?.let { error ->
-            ErrorSection(error)
-        }
     }
 }
 
@@ -562,19 +562,28 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun ErrorSection(error: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = "Read error",
-            style = MaterialTheme.typography.titleMedium,
-            color = Color(0xFF991B1B),
-            fontWeight = FontWeight.SemiBold,
-        )
-        Text(
-            text = error,
-            style = MaterialTheme.typography.bodyMedium,
-            color = Color(0xFF7F1D1D),
-        )
+private fun SyncNotice(message: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFBEB)),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = "Sync Health Connect",
+                style = MaterialTheme.typography.titleSmall,
+                color = Color(0xFF92400E),
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF92400E),
+            )
+        }
     }
 }
 

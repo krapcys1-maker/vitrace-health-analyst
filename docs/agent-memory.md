@@ -49,6 +49,7 @@ Local Mi Fitness export summary:
 - Room now includes normalized daily summary tables for activity, heart, sleep, workouts, and body metrics.
 - The first Android dashboard reads from local daily summary tables, not directly from Health Connect.
 - App launch loads the local dashboard cache first. The `Refresh` button performs the heavier Health Connect sync to avoid hitting Health Connect API quotas on every app open.
+- Health Connect sync failures must stay non-blocking: keep showing the local dashboard and show a short user-facing sync notice instead of raw exception text.
 - AI is not the first milestone.
 - Future AI may use DeepSeek only with aggregated summaries and explicit user consent.
 - Future photo/scan imports need an architectural opening now, but OCR is not part of MVP.
@@ -90,6 +91,7 @@ Local Mi Fitness export summary:
 | 2026-06-05 | `vitrace/mvp-foundation` | Added normalized daily summary tables and foreground Health Connect sync for the last 30 days; documented historical import rules. | `:app:assembleDebug` passed; APK installed with ADB; UI verified on device with local daily summary counts. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Added first local-database dashboard with Today, 7-day, 30-day activity windows and signal coverage. | `:app:assembleDebug` passed; APK installed with ADB; dashboard screenshot/UI dump verified on device. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Redesigned the dashboard into readable cards and changed startup to load cached local data before manual Health Connect refresh. | `:app:assembleDebug` passed; APK installed with ADB; screenshot/UI dump verified on device. |
+| 2026-06-05 | `vitrace/mvp-foundation` | Replaced raw Health Connect exception display with a compact sync notice and kept cached dashboard visible on sync failures. | `:app:assembleDebug` passed; APK installed with ADB; UI dump verified no raw error text on startup. |
 
 ## Update Protocol
 
