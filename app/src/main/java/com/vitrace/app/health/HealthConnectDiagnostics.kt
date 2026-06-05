@@ -12,6 +12,9 @@ data class HealthConnectDiagnostics(
     val dashboard: HealthDashboard? = null,
     val profile: UserProfileEntity? = null,
     val longTermActivity: LongTermActivitySummary? = null,
+    val sleepSummary: SleepDomainSummary? = null,
+    val sportSummary: SportDomainSummary? = null,
+    val bodySummary: BodyDomainSummary? = null,
     val savedSnapshotCount: Int = 0,
     val dailySyncSummary: DailySyncSummary? = null,
     val error: String? = null,
@@ -67,6 +70,7 @@ data class LongTermActivitySummary(
     val stepsPerKm: Int,
     val yearly: List<ActivityPeriodSummary>,
     val bestMonth: ActivityPeriodSummary?,
+    val recentMonths: List<ActivityPeriodSummary> = emptyList(),
 )
 
 data class ActivityPeriodSummary(
@@ -75,6 +79,58 @@ data class ActivityPeriodSummary(
     val estimatedKm: Double,
     val recordedKm: Double,
     val activeDays: Int,
+)
+
+data class SleepDomainSummary(
+    val latest: SleepDaySummary?,
+    val recentDays: List<SleepDaySummary>,
+    val recentMonths: List<SleepPeriodSummary>,
+    val last30SleepDays: Int,
+    val last30AverageMinutes: Double,
+)
+
+data class SleepDaySummary(
+    val date: String,
+    val totalSleepMinutes: Long,
+    val sessionCount: Int,
+    val source: String,
+)
+
+data class SleepPeriodSummary(
+    val period: String,
+    val totalSleepMinutes: Long,
+    val sleepDays: Int,
+) {
+    val averageMinutes: Double
+        get() = if (sleepDays > 0) totalSleepMinutes.toDouble() / sleepDays.toDouble() else 0.0
+}
+
+data class SportDomainSummary(
+    val stepsPerKm: Int,
+    val today: ActivityWindow,
+    val last7Days: ActivityWindow,
+    val last30Days: ActivityWindow,
+    val yearly: List<ActivityPeriodSummary>,
+    val recentMonths: List<ActivityPeriodSummary>,
+    val bestMonth: ActivityPeriodSummary?,
+    val workoutLast30: WorkoutSummary,
+)
+
+data class WorkoutSummary(
+    val daysWithWorkouts: Int,
+    val sessionCount: Int,
+    val totalDurationMinutes: Long,
+)
+
+data class BodyDomainSummary(
+    val bodyDays: Int,
+    val weightRecords: Int,
+    val vo2Records: Int,
+    val spo2Records: Int,
+    val latestDate: String?,
+    val latestWeightKg: Double?,
+    val latestVo2Max: Double?,
+    val latestSpo2Percent: Double?,
 )
 
 data class ActivityWindow(

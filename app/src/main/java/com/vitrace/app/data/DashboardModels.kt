@@ -21,3 +21,22 @@ data class ActivityPeriodAggregate(
     val activeCaloriesKcal: Double,
     val daysWithActivity: Int,
 )
+
+data class SleepPeriodAggregate(
+    val period: String,
+    val totalSleepMinutes: Long,
+    val sleepDays: Int,
+)
+
+data class WorkoutTotalsAggregate(
+    val daysWithWorkouts: Int,
+    val sessionCount: Int,
+    val totalDurationMinutes: Long,
+)
+
+data class BodySignalAggregate(
+    val bodyDays: Int,
+    val weightRecords: Int,
+    val vo2Records: Int,
+    val spo2Records: Int,
+)

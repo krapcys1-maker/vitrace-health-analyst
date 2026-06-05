@@ -66,6 +66,7 @@ Local Mi Fitness export summary:
 - Do not mark history import correct until `tools/audit_mifitness_import.py` reports 0 bad activity days, 0 bad months, 0 bad years, and 0 extra positive activity days.
 - Latest verified history audit: 1,031 canonical activity days, 46 months, 6 years, all matching; 2024-09 = 325,587 steps; 2025 = 3,191,192 steps; best month = 2026-04 with 559,104 steps.
 - Latest live-vs-history comparison: Health Connect is connected but much poorer than the Mi Fitness export on 2026-06-05. Live has current steps/activity/heart/exercise records, but 0 Health Connect sleep, SpO2, VO2 max, and weight records in the latest 30-day quality snapshot. Keep Mi Fitness export as historical baseline and Health Connect as live/freshness source.
+- Main UI direction changed from diagnostic tabs to domain tabs: `Sen`, `Sport`, `Waga`, `Zdrowie`, `Analiza`, `Opcje`. Synchronization and permissions belong only in `Opcje`; health domains should show useful human summaries, trends, and future AI analysis entry points.
 
 ## Important Local Paths
 
@@ -94,6 +95,7 @@ Local Mi Fitness export summary:
 6. Add correlation confidence rules before showing sleep/activity/body insights.
 7. Turn Health Connect quality snapshots into a fuller source reliability screen.
 8. Add background sync after foreground sync remains stable.
+9. Add real chart components and source-specific daily rows before deeper source comparison.
 
 ## Work Log
 
@@ -117,6 +119,7 @@ Local Mi Fitness export summary:
 | 2026-06-05 | `vitrace/mvp-foundation` | Fixed historical step import to use Mi Fitness daily reports instead of summing raw multi-source step rows. | Importer rerun; September 2024 changed from incorrect 611,046 raw steps to canonical 325,587 steps; phone database updated and Analysis screenshot verified. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Added repeatable Mi Fitness import auditor and made historical heart, sleep, and SpO2 prefer canonical daily reports. Disabled raw step fallback so monthly/yearly totals match Mi Fitness. | `python -m py_compile tools/import_mifitness_history_to_db.py tools/audit_mifitness_import.py` passed; audit passed with activity daily_bad=0, month_bad=0, year_bad=0, extra_positive_days=0; heart/sleep/SpO2/workouts had 0 canonical mismatches. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Compared Mi Fitness historical import with current Health Connect live data and documented source coverage. | Manual Health Connect sync from phone UI; pulled phone DB; latest snapshot showed live steps/activity/heart/exercise only, with sleep/SpO2/VO2/weight all 0 in Health Connect. |
+| 2026-06-05 | `vitrace/mvp-foundation` | Reworked Android UI into domain tabs for Sleep, Sport, Weight, Health, Analysis, and Options; moved sync/profile/source controls into Options and added first sleep/sport/body summaries. | `:app:assembleDebug` passed; APK installed with ADB; UI dumps verified Sleep, Sport, Weight, Health, Analysis, and Options tabs on the phone. |
 
 ## Update Protocol
 

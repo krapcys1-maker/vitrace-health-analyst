@@ -143,4 +143,90 @@ interface DailySummaryDao {
         """
     )
     suspend fun bestActivityMonth(): ActivityPeriodAggregate?
+
+    @Query(
+        """
+        SELECT
+            substr(date, 1, 7) AS period,
+            COALESCE(SUM(steps), 0) AS steps,
+            COALESCE(SUM(distanceMeters), 0) AS distanceMeters,
+            COALESCE(SUM(activeCaloriesKcal), 0) AS activeCaloriesKcal,
+            COUNT(CASE WHEN steps > 0 OR distanceMeters > 0 OR activeCaloriesKcal > 0 THEN 1 END) AS daysWithActivity
+        FROM daily_activity_summaries
+        WHERE steps > 0 OR distanceMeters > 0 OR activeCaloriesKcal > 0
+        GROUP BY substr(date, 1, 7)
+        ORDER BY period DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun recentActivityMonths(limit: Int): List<ActivityPeriodAggregate>
+
+    @Query(
+        """
+        SELECT * FROM daily_sleep_summaries
+        WHERE sessionCount > 0 OR totalSleepMinutes > 0
+        ORDER BY date DESC
+        LIMIT 1
+        """
+    )
+    suspend fun latestSleep(): DailySleepSummaryEntity?
+
+    @Query(
+        """
+        SELECT * FROM daily_sleep_summaries
+        WHERE sessionCount > 0 OR totalSleepMinutes > 0
+        ORDER BY date DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun recentSleepDays(limit: Int): List<DailySleepSummaryEntity>
+
+    @Query(
+        """
+        SELECT
+            substr(date, 1, 7) AS period,
+            COALESCE(SUM(totalSleepMinutes), 0) AS totalSleepMinutes,
+            COUNT(CASE WHEN sessionCount > 0 OR totalSleepMinutes > 0 THEN 1 END) AS sleepDays
+        FROM daily_sleep_summaries
+        WHERE sessionCount > 0 OR totalSleepMinutes > 0
+        GROUP BY substr(date, 1, 7)
+        ORDER BY period DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun recentSleepMonths(limit: Int): List<SleepPeriodAggregate>
+
+    @Query(
+        """
+        SELECT
+            COUNT(CASE WHEN sessionCount > 0 OR totalDurationMinutes > 0 THEN 1 END) AS daysWithWorkouts,
+            COALESCE(SUM(sessionCount), 0) AS sessionCount,
+            COALESCE(SUM(totalDurationMinutes), 0) AS totalDurationMinutes
+        FROM daily_workout_summaries
+        WHERE date >= :startDate
+        """
+    )
+    suspend fun workoutsSince(startDate: String): WorkoutTotalsAggregate
+
+    @Query(
+        """
+        SELECT
+            COUNT(CASE WHEN weightRecordCount > 0 OR vo2MaxRecordCount > 0 OR spo2RecordCount > 0 THEN 1 END) AS bodyDays,
+            COALESCE(SUM(weightRecordCount), 0) AS weightRecords,
+            COALESCE(SUM(vo2MaxRecordCount), 0) AS vo2Records,
+            COALESCE(SUM(spo2RecordCount), 0) AS spo2Records
+        FROM daily_body_summaries
+        """
+    )
+    suspend fun bodySignalCounts(): BodySignalAggregate
+
+    @Query(
+        """
+        SELECT * FROM daily_body_summaries
+        WHERE weightRecordCount > 0 OR vo2MaxRecordCount > 0 OR spo2RecordCount > 0
+        ORDER BY date DESC
+        LIMIT 1
+        """
+    )
+    suspend fun latestBody(): DailyBodySummaryEntity?
 }

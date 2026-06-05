@@ -22,10 +22,13 @@ import com.vitrace.app.data.DailyHeartSummaryEntity
 import com.vitrace.app.data.DailySleepSummaryEntity
 import com.vitrace.app.data.DailyWorkoutSummaryEntity
 import com.vitrace.app.data.ActivityPeriodAggregate
+import com.vitrace.app.data.BodySignalAggregate
 import com.vitrace.app.data.DashboardActivityAggregate
 import com.vitrace.app.data.HealthConnectQualitySnapshotEntity
+import com.vitrace.app.data.SleepPeriodAggregate
 import com.vitrace.app.data.UserProfileEntity
 import com.vitrace.app.data.VitaTraceDatabase
+import com.vitrace.app.data.WorkoutTotalsAggregate
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -76,6 +79,9 @@ object HealthConnectDiagnosticsRepository {
                 dashboard = database.loadDashboard(end),
                 profile = profile,
                 longTermActivity = database.loadLongTermActivity(profile),
+                sleepSummary = database.loadSleepDomainSummary(),
+                sportSummary = database.loadSportDomainSummary(profile),
+                bodySummary = database.loadBodyDomainSummary(),
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
             )
@@ -90,6 +96,9 @@ object HealthConnectDiagnosticsRepository {
                 dashboard = database.loadDashboard(end),
                 profile = profile,
                 longTermActivity = database.loadLongTermActivity(profile),
+                sleepSummary = database.loadSleepDomainSummary(),
+                sportSummary = database.loadSportDomainSummary(profile),
+                bodySummary = database.loadBodyDomainSummary(),
             )
         }
 
@@ -118,6 +127,9 @@ object HealthConnectDiagnosticsRepository {
                 dashboard = database.loadDashboard(end),
                 profile = profile,
                 longTermActivity = database.loadLongTermActivity(profile),
+                sleepSummary = database.loadSleepDomainSummary(),
+                sportSummary = database.loadSportDomainSummary(profile),
+                bodySummary = database.loadBodyDomainSummary(),
             )
         }
 
@@ -154,6 +166,9 @@ object HealthConnectDiagnosticsRepository {
                 dashboard = database.loadDashboard(end),
                 profile = profile,
                 longTermActivity = database.loadLongTermActivity(profile),
+                sleepSummary = database.loadSleepDomainSummary(),
+                sportSummary = database.loadSportDomainSummary(profile),
+                bodySummary = database.loadBodyDomainSummary(),
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
             )
@@ -168,6 +183,9 @@ object HealthConnectDiagnosticsRepository {
                 dashboard = database.loadDashboard(end),
                 profile = profile,
                 longTermActivity = database.loadLongTermActivity(profile),
+                sleepSummary = database.loadSleepDomainSummary(),
+                sportSummary = database.loadSportDomainSummary(profile),
+                bodySummary = database.loadBodyDomainSummary(),
                 error = error.toUserMessage(),
             )
         }
@@ -593,6 +611,67 @@ object HealthConnectDiagnosticsRepository {
             stepsPerKm = profile.stepsPerKm,
             yearly = dao.yearlyActivity().map { aggregate -> aggregate.toActivityPeriodSummary(profile.stepsPerKm) },
             bestMonth = dao.bestActivityMonth()?.toActivityPeriodSummary(profile.stepsPerKm),
+            recentMonths = dao.recentActivityMonths(limit = 12).map { aggregate ->
+                aggregate.toActivityPeriodSummary(profile.stepsPerKm)
+            },
+        )
+    }
+
+    private suspend fun VitaTraceDatabase.loadSleepDomainSummary(): SleepDomainSummary {
+        val dao = dailySummaryDao()
+        val recentDays = dao.recentSleepDays(limit = 30).map { sleep ->
+            sleep.toSleepDaySummary()
+        }
+        val recentMonths = dao.recentSleepMonths(limit = 12).map { aggregate ->
+            aggregate.toSleepPeriodSummary()
+        }
+        val last30 = recentDays.take(30)
+        return SleepDomainSummary(
+            latest = dao.latestSleep()?.toSleepDaySummary(),
+            recentDays = recentDays,
+            recentMonths = recentMonths,
+            last30SleepDays = last30.size,
+            last30AverageMinutes = last30
+                .takeIf { days -> days.isNotEmpty() }
+                ?.map { day -> day.totalSleepMinutes }
+                ?.average()
+                ?: 0.0,
+        )
+    }
+
+    private suspend fun VitaTraceDatabase.loadSportDomainSummary(
+        profile: UserProfileEntity,
+    ): SportDomainSummary {
+        val zone = ZoneId.systemDefault()
+        val today = LocalDate.now(zone)
+        val dao = dailySummaryDao()
+        return SportDomainSummary(
+            stepsPerKm = profile.stepsPerKm,
+            today = dao.activityForDate(today.toString()).toActivityWindow(),
+            last7Days = dao.activitySince(today.minusDays(6).toString()).toActivityWindow(),
+            last30Days = dao.activitySince(today.minusDays(29).toString()).toActivityWindow(),
+            yearly = dao.yearlyActivity().map { aggregate -> aggregate.toActivityPeriodSummary(profile.stepsPerKm) },
+            recentMonths = dao.recentActivityMonths(limit = 12).map { aggregate ->
+                aggregate.toActivityPeriodSummary(profile.stepsPerKm)
+            },
+            bestMonth = dao.bestActivityMonth()?.toActivityPeriodSummary(profile.stepsPerKm),
+            workoutLast30 = dao.workoutsSince(today.minusDays(29).toString()).toWorkoutSummary(),
+        )
+    }
+
+    private suspend fun VitaTraceDatabase.loadBodyDomainSummary(): BodyDomainSummary {
+        val dao = dailySummaryDao()
+        val counts = dao.bodySignalCounts()
+        val latest = dao.latestBody()
+        return BodyDomainSummary(
+            bodyDays = counts.bodyDays,
+            weightRecords = counts.weightRecords,
+            vo2Records = counts.vo2Records,
+            spo2Records = counts.spo2Records,
+            latestDate = latest?.date,
+            latestWeightKg = latest?.latestWeightKg,
+            latestVo2Max = latest?.latestVo2Max,
+            latestSpo2Percent = latest?.latestSpo2Percent,
         )
     }
 
@@ -603,6 +682,31 @@ object HealthConnectDiagnosticsRepository {
             estimatedKm = if (stepsPerKm > 0) steps.toDouble() / stepsPerKm.toDouble() else 0.0,
             recordedKm = distanceMeters / 1000.0,
             activeDays = daysWithActivity,
+        )
+    }
+
+    private fun DailySleepSummaryEntity.toSleepDaySummary(): SleepDaySummary {
+        return SleepDaySummary(
+            date = date,
+            totalSleepMinutes = totalSleepMinutes,
+            sessionCount = sessionCount,
+            source = source,
+        )
+    }
+
+    private fun SleepPeriodAggregate.toSleepPeriodSummary(): SleepPeriodSummary {
+        return SleepPeriodSummary(
+            period = period,
+            totalSleepMinutes = totalSleepMinutes,
+            sleepDays = sleepDays,
+        )
+    }
+
+    private fun WorkoutTotalsAggregate.toWorkoutSummary(): WorkoutSummary {
+        return WorkoutSummary(
+            daysWithWorkouts = daysWithWorkouts,
+            sessionCount = sessionCount,
+            totalDurationMinutes = totalDurationMinutes,
         )
     }
 

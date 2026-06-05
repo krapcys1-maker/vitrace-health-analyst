@@ -47,6 +47,7 @@ import com.vitrace.app.analysis.AnalysisBlock
 import com.vitrace.app.analysis.buildVitaTraceAnalysis
 import com.vitrace.app.data.UserProfileEntity
 import com.vitrace.app.health.ActivityWindow
+import com.vitrace.app.health.BodyDomainSummary
 import com.vitrace.app.health.DataQualityItem
 import com.vitrace.app.health.DailySyncSummary
 import com.vitrace.app.health.DiagnosticQuality
@@ -56,6 +57,8 @@ import com.vitrace.app.health.HealthConnectDiagnostics
 import com.vitrace.app.health.HealthConnectDiagnosticsRepository
 import com.vitrace.app.health.HealthConnectSdkStatus
 import com.vitrace.app.health.LongTermActivitySummary
+import com.vitrace.app.health.SleepDomainSummary
+import com.vitrace.app.health.SportDomainSummary
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -92,7 +95,7 @@ private fun HealthConnectScreen() {
     val scope = rememberCoroutineScope()
     var diagnostics by remember { mutableStateOf<HealthConnectDiagnostics?>(null) }
     var loading by remember { mutableStateOf(false) }
-    var selectedTab by remember { mutableStateOf(AppTab.Dashboard) }
+    var selectedTab by remember { mutableStateOf(AppTab.Sleep) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = PermissionController.createRequestPermissionResultContract(),
@@ -123,7 +126,6 @@ private fun HealthConnectScreen() {
         modifier = Modifier
             .fillMaxSize()
             .safeDrawingPadding()
-            .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
@@ -132,30 +134,41 @@ private fun HealthConnectScreen() {
             selectedTab = selectedTab,
             onSelectTab = { tab -> selectedTab = tab },
         )
-        when (selectedTab) {
-            AppTab.Dashboard -> DashboardTab(
-                diagnostics = diagnostics,
-                loading = loading,
-                onRefresh = { refresh(syncFromHealthConnect = true) },
-            )
-            AppTab.Analysis -> AnalysisTab(
-                dashboard = diagnostics?.dashboard,
-                longTermActivity = diagnostics?.longTermActivity,
-            )
-            AppTab.Data -> DataTab(
-                diagnostics = diagnostics,
-                loading = loading,
-                onRequestPermissions = {
-                    val openedSettings = openHealthConnectPermissions(context)
-                    if (!openedSettings) {
-                        permissionLauncher.launch(HealthConnectDiagnosticsRepository.requiredPermissions)
-                    }
-                },
-                onRefresh = { refresh(syncFromHealthConnect = true) },
-            )
-            AppTab.Profile -> ProfileTab(profile = diagnostics?.profile)
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            when (selectedTab) {
+                AppTab.Sleep -> SleepTab(
+                    summary = diagnostics?.sleepSummary,
+                )
+                AppTab.Sport -> SportTab(summary = diagnostics?.sportSummary)
+                AppTab.Weight -> WeightTab(summary = diagnostics?.bodySummary)
+                AppTab.Health -> HealthTab()
+                AppTab.Analysis -> AnalysisTab(
+                    dashboard = diagnostics?.dashboard,
+                    longTermActivity = diagnostics?.longTermActivity,
+                    sleepSummary = diagnostics?.sleepSummary,
+                    sportSummary = diagnostics?.sportSummary,
+                    bodySummary = diagnostics?.bodySummary,
+                )
+                AppTab.Options -> OptionsTab(
+                    diagnostics = diagnostics,
+                    loading = loading,
+                    profile = diagnostics?.profile,
+                    onRequestPermissions = {
+                        val openedSettings = openHealthConnectPermissions(context)
+                        if (!openedSettings) {
+                            permissionLauncher.launch(HealthConnectDiagnosticsRepository.requiredPermissions)
+                        }
+                    },
+                    onRefresh = { refresh(syncFromHealthConnect = true) },
+                )
+            }
+            Spacer(modifier = Modifier.height(96.dp))
         }
-        Spacer(modifier = Modifier.height(96.dp))
     }
 }
 
@@ -184,7 +197,7 @@ private fun Header() {
             color = Color(0xFF0F172A),
         )
         Text(
-            text = "Dashboard zdrowia",
+            text = "Osobista analiza ciala",
             style = MaterialTheme.typography.titleMedium,
             color = Color(0xFF475569),
         )
@@ -197,39 +210,44 @@ private fun TabSection(
     onSelectTab: (AppTab) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            AppTab.entries.forEach { tab ->
-                if (tab == selectedTab) {
-                    Button(
-                        onClick = { onSelectTab(tab) },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                    ) {
-                        Text(
-                            text = tab.label,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+        AppTab.entries.chunked(3).forEach { rowTabs ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                rowTabs.forEach { tab ->
+                    if (tab == selectedTab) {
+                        Button(
+                            onClick = { onSelectTab(tab) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                        ) {
+                            Text(
+                                text = tab.label,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = { onSelectTab(tab) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                        ) {
+                            Text(
+                                text = tab.label,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
-                } else {
-                    OutlinedButton(
-                        onClick = { onSelectTab(tab) },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                    ) {
-                        Text(
-                            text = tab.label,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
+                }
+                repeat(3 - rowTabs.size) {
+                    Spacer(modifier = Modifier.weight(1f))
                 }
             }
         }
@@ -258,27 +276,405 @@ private fun DashboardTab(
 }
 
 @Composable
+private fun SleepTab(summary: SleepDomainSummary?) {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        SectionTitle("Sen")
+        if (summary == null) {
+            AnalysisCard(
+                title = "Brak danych snu",
+                lines = listOf("czekamy na import albo sync snu"),
+                quality = DiagnosticQuality.Warning,
+            )
+            return
+        }
+        SleepLatestCard(summary)
+        SleepMonthlyCard(summary)
+        AnalysisCard(
+            title = "Analiza snu",
+            lines = listOf(
+                "AI pozniej dostanie agregaty snu, aktywnosci i pulsu",
+                "najpierw liczymy korelacje lokalnie i pokazujemy pewnosc wniosku",
+                "nie bedziemy udawac zaleznosci przy zbyt malej probce",
+            ),
+            quality = if (summary.last30SleepDays >= 14) DiagnosticQuality.Good else DiagnosticQuality.Warning,
+        )
+    }
+}
+
+@Composable
+private fun SleepLatestCard(summary: SleepDomainSummary) {
+    val latest = summary.latest
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "Ostatni sen",
+                style = MaterialTheme.typography.titleMedium,
+                color = Color(0xFF0F172A),
+                fontWeight = FontWeight.Bold,
+            )
+            CompactMetricRow(
+                label = latest?.date ?: "brak daty",
+                value = latest?.totalSleepMinutes?.formatMinutes() ?: "brak",
+                quality = if (latest == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
+            )
+            CompactMetricRow(
+                label = "Ostatnie 30 dni",
+                value = "${summary.last30SleepDays} dni | ${summary.last30AverageMinutes.formatMinutes()} srednio",
+                quality = summary.last30SleepDays.qualityForCount(),
+            )
+            CompactMetricRow(
+                label = "Zrodlo",
+                value = latest?.source ?: "none",
+                quality = if (latest == null) DiagnosticQuality.Warning else DiagnosticQuality.Neutral,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SleepMonthlyCard(summary: SleepDomainSummary) {
+    PeriodBarsCard(
+        title = "Sen miesiecznie",
+        rows = summary.recentMonths.map { month ->
+            BarRowData(
+                label = month.period,
+                value = month.averageMinutes,
+                text = "${month.averageMinutes.formatMinutes()} srednio | ${month.sleepDays} dni",
+            )
+        },
+        emptyText = "brak miesiecy snu",
+    )
+}
+
+@Composable
+private fun SportTab(summary: SportDomainSummary?) {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        SectionTitle("Sport")
+        if (summary == null) {
+            AnalysisCard(
+                title = "Brak danych sportowych",
+                lines = listOf("czekamy na kroki albo import treningow"),
+                quality = DiagnosticQuality.Warning,
+            )
+            return
+        }
+        TodayTiles(window = summary.today)
+        PeriodSummaryCard(title = "7 dni", window = summary.last7Days)
+        PeriodSummaryCard(title = "30 dni", window = summary.last30Days)
+        WorkoutSummaryCard(summary)
+        LongTermActivitySection(
+            summary = LongTermActivitySummary(
+                stepsPerKm = summary.stepsPerKm,
+                yearly = summary.yearly,
+                bestMonth = summary.bestMonth,
+                recentMonths = summary.recentMonths,
+            )
+        )
+        PeriodBarsCard(
+            title = "Kroki miesiecznie",
+            rows = summary.recentMonths.map { month ->
+                BarRowData(
+                    label = month.period,
+                    value = month.steps.toDouble(),
+                    text = "${month.steps.formatWhole()} krokow | ${month.estimatedKm.format1()} km",
+                )
+            },
+            emptyText = "brak miesiecy aktywnosci",
+        )
+        AnalysisCard(
+            title = "Analiza sportu",
+            lines = listOf(
+                "tu rozdzielimy kroki, chodzenie, bieganie i treningi",
+                "dla biegania bedziemy sprawdzac tempo, puls i dlugosc sesji",
+                "wniosek typu: dluzej biegasz na nizszym pulsie wymaga serii treningow",
+            ),
+            quality = if (summary.workoutLast30.sessionCount > 0) DiagnosticQuality.Good else DiagnosticQuality.Neutral,
+        )
+    }
+}
+
+@Composable
+private fun WorkoutSummaryCard(summary: SportDomainSummary) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "Treningi 30 dni",
+                style = MaterialTheme.typography.titleMedium,
+                color = Color(0xFF0F172A),
+                fontWeight = FontWeight.Bold,
+            )
+            CompactMetricRow(
+                label = "Sesje",
+                value = summary.workoutLast30.sessionCount.toString(),
+                quality = summary.workoutLast30.sessionCount.qualityForCount(),
+            )
+            CompactMetricRow(
+                label = "Czas",
+                value = summary.workoutLast30.totalDurationMinutes.formatMinutes(),
+                quality = summary.workoutLast30.totalDurationMinutes.qualityForCount(),
+            )
+            CompactMetricRow(
+                label = "Dni z treningiem",
+                value = summary.workoutLast30.daysWithWorkouts.toString(),
+                quality = summary.workoutLast30.daysWithWorkouts.qualityForCount(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun WeightTab(summary: BodyDomainSummary?) {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        SectionTitle("Waga")
+        if (summary == null) {
+            AnalysisCard(
+                title = "Brak danych ciala",
+                lines = listOf("waga i sklad ciala wejda z importu albo recznie"),
+                quality = DiagnosticQuality.Warning,
+            )
+            return
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = "Ostatnie dane",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color(0xFF0F172A),
+                    fontWeight = FontWeight.Bold,
+                )
+                CompactMetricRow(
+                    label = "Data",
+                    value = summary.latestDate ?: "brak",
+                    quality = if (summary.latestDate == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
+                )
+                CompactMetricRow(
+                    label = "Waga",
+                    value = summary.latestWeightKg?.let { "${it.format1()} kg" } ?: "brak",
+                    quality = if (summary.latestWeightKg == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
+                )
+                CompactMetricRow(
+                    label = "VO2 max",
+                    value = summary.latestVo2Max?.format1() ?: "brak",
+                    quality = if (summary.latestVo2Max == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
+                )
+                CompactMetricRow(
+                    label = "SpO2",
+                    value = summary.latestSpo2Percent?.let { "${it.format1()}%" } ?: "brak",
+                    quality = if (summary.latestSpo2Percent == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
+                )
+            }
+        }
+        AnalysisCard(
+            title = "Pokrycie danych ciala",
+            lines = listOf(
+                "dni z danymi: ${summary.bodyDays}",
+                "waga: ${summary.weightRecords} rekordow",
+                "VO2 max: ${summary.vo2Records} rekordow",
+                "SpO2: ${summary.spo2Records} rekordow",
+            ),
+            quality = summary.bodyDays.qualityForCount(),
+        )
+        AnalysisCard(
+            title = "Docelowo",
+            lines = listOf(
+                "wykres wagi, miesni, tluszczu i nawodnienia",
+                "reczne wpisy albo import ze zdjecia wyniku z wagi",
+                "korelacja: waga, puls, sen i meczliwosc",
+            ),
+            quality = DiagnosticQuality.Neutral,
+        )
+    }
+}
+
+@Composable
+private fun HealthTab() {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        SectionTitle("Zdrowie")
+        AnalysisCard(
+            title = "Wyniki badan",
+            lines = listOf(
+                "tu bedzie miejsce na skan albo zdjecie wynikow krwi",
+                "AI nie bedzie diagnozowac, tylko porzadkowac parametry i trendy",
+                "wyniki beda laczone z Twoim snem, sportem, pulsem i waga",
+            ),
+            quality = DiagnosticQuality.Neutral,
+        )
+        AnalysisCard(
+            title = "Furtka techniczna",
+            lines = listOf(
+                "potrzebujemy lokalnego magazynu dokumentow",
+                "potrzebujemy tabeli parametrow laboratoryjnych",
+                "kazdy odczyt ze skanu musi byc do potwierdzenia przez uzytkownika",
+            ),
+            quality = DiagnosticQuality.Neutral,
+        )
+    }
+}
+
+@Composable
 private fun AnalysisTab(
     dashboard: HealthDashboard?,
     longTermActivity: LongTermActivitySummary?,
+    sleepSummary: SleepDomainSummary?,
+    sportSummary: SportDomainSummary?,
+    bodySummary: BodyDomainSummary?,
 ) {
     val report = buildVitaTraceAnalysis(dashboard)
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SectionTitle("Analiza")
-        LongTermActivitySection(summary = longTermActivity)
         AnalysisCard(
-            title = "Co VitaTrace ma robic lepiej niz Mi Fitness",
+            title = "Co analizujemy",
             lines = listOf(
-                "trend wobec Twojej historii, nie tylko dzisiejszy wynik",
-                "ocena czy dane sa kompletne i wiarygodne",
-                "wnioski z polaczenia snu, pulsu, aktywnosci i treningow",
+                "sen kontra aktywnosc fizyczna",
+                "treningi kontra puls i zmeczenie",
+                "waga i sklad ciala kontra sen, puls i forma",
             ),
             quality = DiagnosticQuality.Good,
         )
         AnalysisCard(report.readiness)
         AnalysisCard(report.currentInsight)
-        AnalysisCard(report.historyPlan)
+        SleepActivityCorrelationCard(sleepSummary = sleepSummary, sportSummary = sportSummary)
+        AnalysisCard(
+            title = "Gotowosc domen",
+            lines = listOf(
+                "sen: ${sleepSummary?.last30SleepDays ?: 0} dni w ostatnim oknie",
+                "sport: ${sportSummary?.last30Days?.daysWithActivity ?: 0} aktywnych dni",
+                "waga/cialo: ${bodySummary?.bodyDays ?: 0} dni z sygnalem",
+            ),
+            quality = if ((sleepSummary?.last30SleepDays ?: 0) >= 14 && (sportSummary?.last30Days?.daysWithActivity ?: 0) >= 14) {
+                DiagnosticQuality.Good
+            } else {
+                DiagnosticQuality.Warning
+            },
+        )
+        LongTermActivitySection(summary = longTermActivity)
+    }
+}
+
+@Composable
+private fun SleepActivityCorrelationCard(
+    sleepSummary: SleepDomainSummary?,
+    sportSummary: SportDomainSummary?,
+) {
+    val sleepDays = sleepSummary?.last30SleepDays ?: 0
+    val activeDays = sportSummary?.last30Days?.daysWithActivity ?: 0
+    val ready = sleepDays >= 14 && activeDays >= 14
+    AnalysisCard(
+        title = "Sen a aktywnosc",
+        lines = if (ready) {
+            listOf(
+                "mamy wystarczajaco dni do pierwszej korelacji",
+                "kolejny krok: policzyc zaleznosc krokow i treningow od dlugosci snu",
+                "wniosek pokazemy z progiem pewnosci, nie jako zgadywanie",
+            )
+        } else {
+            listOf(
+                "potrzeba minimum 14 dni snu i aktywnosci w tym samym oknie",
+                "teraz sen: $sleepDays dni, aktywnosc: $activeDays dni",
+                "na razie pokazujemy dane, korelacji jeszcze nie udajemy",
+            )
+        },
+        quality = if (ready) DiagnosticQuality.Good else DiagnosticQuality.Warning,
+    )
+}
+
+@Composable
+private fun OptionsTab(
+    diagnostics: HealthConnectDiagnostics?,
+    loading: Boolean,
+    profile: UserProfileEntity?,
+    onRequestPermissions: () -> Unit,
+    onRefresh: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        SectionTitle("Opcje")
+        ProfileCard(profile = profile)
+        DataConnectionCard(diagnostics = diagnostics)
+        ActionSection(
+            diagnostics = diagnostics,
+            loading = loading,
+            onRequestPermissions = onRequestPermissions,
+            onRefresh = onRefresh,
+        )
+        diagnostics?.error?.let { error -> SyncNotice(error) }
+        SourceCoverageSection(summary = diagnostics?.dailySyncSummary)
+        DataQualitySection(items = diagnostics?.dataQualityItems ?: emptyList())
+    }
+}
+
+private data class BarRowData(
+    val label: String,
+    val value: Double,
+    val text: String,
+)
+
+@Composable
+private fun PeriodBarsCard(
+    title: String,
+    rows: List<BarRowData>,
+    emptyText: String,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = Color(0xFF0F172A),
+                fontWeight = FontWeight.Bold,
+            )
+            if (rows.isEmpty()) {
+                Text(
+                    text = emptyText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF64748B),
+                )
+            } else {
+                val maxValue = rows.maxOf { row -> row.value }.coerceAtLeast(1.0)
+                rows.forEach { row ->
+                    CompactMetricRow(
+                        label = row.label,
+                        value = row.text,
+                        quality = if (row.value > 0.0) DiagnosticQuality.Good else DiagnosticQuality.Warning,
+                    )
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth(fraction = (row.value / maxValue).toFloat().coerceIn(0.05f, 1f))
+                            .height(8.dp),
+                        color = Color(0xFF0F766E),
+                        shape = RoundedCornerShape(8.dp),
+                    ) {}
+                }
+            }
+        }
     }
 }
 
@@ -1154,6 +1550,14 @@ private fun Double.format1(): String = "%,.1f".format(this)
 
 private fun Long.formatWhole(): String = "%,d".format(this)
 
+private fun Long.formatMinutes(): String {
+    val hours = this / 60
+    val minutes = this % 60
+    return if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m"
+}
+
+private fun Double.formatMinutes(): String = toLong().formatMinutes()
+
 private fun DataQualityItem.statusLabel(): String {
     return when {
         !hasPermission -> "no permission"
@@ -1163,10 +1567,12 @@ private fun DataQualityItem.statusLabel(): String {
 }
 
 private enum class AppTab(val label: String) {
-    Dashboard("Start"),
+    Sleep("Sen"),
+    Sport("Sport"),
+    Weight("Waga"),
+    Health("Zdrowie"),
     Analysis("Analiza"),
-    Data("Dane"),
-    Profile("Profil"),
+    Options("Opcje"),
 }
 
 private fun HealthConnectSdkStatus.label(): String {
