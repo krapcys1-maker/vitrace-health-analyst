@@ -17,6 +17,7 @@ import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import com.vitrace.app.analysis.AnalysisContextBuilder
+import com.vitrace.app.analysis.InsightEngine
 import com.vitrace.app.data.DailyActivitySummaryEntity
 import com.vitrace.app.data.DailyBodySummaryEntity
 import com.vitrace.app.data.DailyHeartSummaryEntity
@@ -100,6 +101,7 @@ object HealthConnectDiagnosticsRepository {
         val profile = database.loadUserProfile(end)
 
         if (!syncFromHealthConnect) {
+            val analysisContext = AnalysisContextBuilder.buildAndPersistCurrent(database, profile, end)
             return HealthConnectDiagnostics(
                 sdkStatus = sdkStatus,
                 requiredPermissionCount = requiredPermissions.size,
@@ -110,13 +112,15 @@ object HealthConnectDiagnosticsRepository {
                 sportSummary = database.loadSportDomainSummary(profile),
                 bodySummary = database.loadBodyDomainSummary(),
                 healthJournal = database.loadHealthJournalSummary(),
-                analysisContext = AnalysisContextBuilder.buildAndPersistCurrent(database, profile, end),
+                analysisContext = analysisContext,
+                insights = InsightEngine.build(database, profile, end),
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
             )
         }
 
         if (sdkStatus != HealthConnectSdkStatus.Available) {
+            val analysisContext = AnalysisContextBuilder.buildAndPersistCurrent(database, profile, end)
             return HealthConnectDiagnostics(
                 sdkStatus = sdkStatus,
                 requiredPermissionCount = requiredPermissions.size,
@@ -129,7 +133,8 @@ object HealthConnectDiagnosticsRepository {
                 sportSummary = database.loadSportDomainSummary(profile),
                 bodySummary = database.loadBodyDomainSummary(),
                 healthJournal = database.loadHealthJournalSummary(),
-                analysisContext = AnalysisContextBuilder.buildAndPersistCurrent(database, profile, end),
+                analysisContext = analysisContext,
+                insights = InsightEngine.build(database, profile, end),
             )
         }
 
@@ -138,6 +143,7 @@ object HealthConnectDiagnosticsRepository {
         val grantedRequired = granted.intersect(requiredPermissions)
 
         if (!granted.containsAll(requiredPermissions)) {
+            val analysisContext = AnalysisContextBuilder.buildAndPersistCurrent(database, profile, end)
             return HealthConnectDiagnostics(
                 sdkStatus = sdkStatus,
                 grantedPermissionCount = grantedRequired.size,
@@ -162,7 +168,8 @@ object HealthConnectDiagnosticsRepository {
                 sportSummary = database.loadSportDomainSummary(profile),
                 bodySummary = database.loadBodyDomainSummary(),
                 healthJournal = database.loadHealthJournalSummary(),
-                analysisContext = AnalysisContextBuilder.buildAndPersistCurrent(database, profile, end),
+                analysisContext = analysisContext,
+                insights = InsightEngine.build(database, profile, end),
             )
         }
 
@@ -189,6 +196,7 @@ object HealthConnectDiagnosticsRepository {
                 )
             }
 
+            val analysisContext = AnalysisContextBuilder.buildAndPersistCurrent(database, profile, end)
             HealthConnectDiagnostics(
                 sdkStatus = sdkStatus,
                 grantedPermissionCount = requiredPermissions.size,
@@ -203,11 +211,13 @@ object HealthConnectDiagnosticsRepository {
                 sportSummary = database.loadSportDomainSummary(profile),
                 bodySummary = database.loadBodyDomainSummary(),
                 healthJournal = database.loadHealthJournalSummary(),
-                analysisContext = AnalysisContextBuilder.buildAndPersistCurrent(database, profile, end),
+                analysisContext = analysisContext,
+                insights = InsightEngine.build(database, profile, end),
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
             )
         } catch (error: Exception) {
+            val analysisContext = AnalysisContextBuilder.buildAndPersistCurrent(database, profile, end)
             HealthConnectDiagnostics(
                 sdkStatus = sdkStatus,
                 grantedPermissionCount = requiredPermissions.size,
@@ -222,7 +232,8 @@ object HealthConnectDiagnosticsRepository {
                 sportSummary = database.loadSportDomainSummary(profile),
                 bodySummary = database.loadBodyDomainSummary(),
                 healthJournal = database.loadHealthJournalSummary(),
-                analysisContext = AnalysisContextBuilder.buildAndPersistCurrent(database, profile, end),
+                analysisContext = analysisContext,
+                insights = InsightEngine.build(database, profile, end),
                 error = error.toUserMessage(),
             )
         }

@@ -90,3 +90,43 @@ data class MonthlyWorkoutSessionAggregate(
     val avgCadence: Double?,
     val avgVo2Max: Double?,
 )
+
+data class SleepNextDayActivityRow(
+    val date: String,
+    val totalSleepMinutes: Long,
+    val deepSleepMinutes: Long?,
+    val remSleepMinutes: Long?,
+    val sleepScore: Int?,
+    val nextDaySteps: Long,
+    val nextDayWorkoutMinutes: Long,
+    val nextDayAvgHeartRateBpm: Double?,
+)
+
+data class TrainingSleepAggregate(
+    val groupName: String,
+    val nights: Int,
+    val avgTotalSleepMinutes: Double,
+    val avgDeepSleepMinutes: Double?,
+    val avgRemSleepMinutes: Double?,
+    val avgSleepScore: Double?,
+)
+
+data class WalkingDistanceBandAggregate(
+    val distanceBand: String,
+    val sessionCount: Int,
+    val distanceKm: Double,
+    val avgHeartRateBpm: Double?,
+    val avgPaceSecondsPerKm: Double?,
+    val activeCaloriesPerKm: Double?,
+    val avgVo2Max: Double?,
+)
+
+data class WorkoutTypeSessionAggregate(
+    val workoutType: String,
+    val sessionCount: Int,
+    val firstDate: String?,
+    val lastDate: String?,
+    val distanceKm: Double,
+    val heartSessions: Int,
+    val vo2Sessions: Int,
+)

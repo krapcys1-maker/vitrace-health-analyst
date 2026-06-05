@@ -54,6 +54,7 @@ import com.vitrace.app.analysis.AnalysisConfidence
 import com.vitrace.app.analysis.MonthlySportTrend
 import com.vitrace.app.analysis.PersonalAnalysisContext
 import com.vitrace.app.analysis.SportEfficiencyComparison
+import com.vitrace.app.analysis.TestedInsight
 import com.vitrace.app.analysis.buildVitaTraceAnalysis
 import com.vitrace.app.data.UserProfileEntity
 import com.vitrace.app.health.ActivityWindow
@@ -221,87 +222,21 @@ private fun DataRealityScreen(
         SyncNotice(error)
     }
 
-    val longTerm = diagnostics.longTermActivity
-    val analysis = diagnostics.analysisContext
-    val yearlyRows = longTerm?.yearly.orEmpty()
-    val bestYear = yearlyRows.maxByOrNull { row -> row.steps }
-    val latestYear = yearlyRows.maxByOrNull { row -> row.period }
-    val sleepDays = analysis?.sleepActivityComparison?.totalSampleDays
-        ?: diagnostics.sleepSummary?.last30SleepDays
-        ?: 0
-    val walkingTrendRows = analysis?.monthlySportTrends.orEmpty()
-        .count { trend -> trend.workoutType == "walking" }
-    val walkingTrendSessions = analysis?.monthlySportTrends.orEmpty()
-        .filter { trend -> trend.workoutType == "walking" }
-        .sumOf { trend -> trend.sessionCount }
-    val runningConfidence = analysis?.sportEfficiencyComparisons
-        ?.firstOrNull { comparison -> comparison.workoutType == "running" }
-        ?.confidence
+    val insights = diagnostics.insights
 
     RealityHeroCard(
-        title = "Reset: tylko wnioski z danych",
-        answer = "Ekran glowny nie ma juz byc zbiorem zakladek. Ma pokazac pytanie, odpowiedz, dowody, zakres dat, probke, pewnosc i ograniczenia.",
+        title = "Wnioski z danych",
+        answer = "To jest pierwszy feed liczony z bazy: pytanie, odpowiedz, dowody, zakres dat, probka, pewnosc i ograniczenia.",
         evidence = listOf(
-            "kroki i km: mocny dlugi sygnal",
-            "sen: szczegolowy, ale nierowny sygnal; $sleepDays wspolnych dni snu i aktywnosci",
-            "chodzenie: najlepszy sygnal treningowy; bieganie i SpO2 tylko pomocniczo",
+            "wnioski: ${insights.size}",
+            "wysoka pewnosc: ${insights.count { insight -> insight.confidence == AnalysisConfidence.High }}",
+            "za mala probka: ${insights.count { insight -> insight.confidence == AnalysisConfidence.Insufficient }}",
         ),
     )
 
-    AnalysisCard(
-        title = "Twarde fakty",
-        lines = buildList {
-            if (yearlyRows.isNotEmpty()) {
-                add("aktywnosc: ${yearlyRows.size} lat z krokami/km")
-                bestYear?.let { year ->
-                    add("najmocniejszy rok: ${year.period}, ${year.steps.formatWhole()} krokow, ${year.estimatedKm.format1()} km")
-                }
-                latestYear?.let { year ->
-                    add("ostatni rok w danych: ${year.period}, ${year.steps.formatWhole()} krokow, ${year.estimatedKm.format1()} km")
-                }
-            } else {
-                add("aktywnosc: brak rocznych podsumowan")
-            }
-            add("sen: $sleepDays dni wspolnych z aktywnoscia do testow")
-            add("chodzenie: $walkingTrendSessions sesji treningowych w analizie")
-            add("chodzenie miesiecznie: $walkingTrendRows miesiecy do porownan")
-        },
-        quality = DiagnosticQuality.Good,
-    )
-
-    AnalysisCard(
-        title = "Czego nie wolno udawac",
-        lines = buildList {
-            add("proste wiecej krokow = lepszy sen nie wyszlo w recznym sprawdzeniu")
-            add("bieganie: ${runningConfidence?.label() ?: "za malo danych"} - najpierw lista sesji, nie trend")
-            add("kalorie z zegarka sa szacunkowe - tylko pomocniczy sygnal")
-            add("fazy snu z zegarka sa trendem, nie laboratoryjna prawda")
-            add("SpO2 i Health Connect live sa dodatkiem, nie glowna historia")
-        },
-        quality = DiagnosticQuality.Warning,
-    )
-
-    AnalysisCard(
-        title = "Co warto laczyc",
-        lines = listOf(
-            "1. Sen -> nastepny dzien: czy gorszy sen zmienia kroki, trening i puls?",
-            "2. Aktywnosc -> noc: trening/duzy wysilek kontra REM, gleboki sen i wynik snu.",
-            "3. Chodzenie -> wydolnosc: puls, tempo, kcal/km i VO2 w tym samym pasmie dystansu.",
-            "4. Puls -> kontekst: dni z wyzszym pulsem kontra sen i obciazenie.",
-        ),
-        quality = DiagnosticQuality.Neutral,
-    )
-
-    AnalysisCard(
-        title = "Jak to ma byc pokazane",
-        lines = listOf(
-            "jeden feed wnioskow zamiast zakladek",
-            "najpierw odpowiedz, pod spodem dowody i zakres dat",
-            "wykres tylko wtedy, gdy porownuje okna albo pokazuje baseline",
-            "AI dopiero tlumaczy gotowe wyniki z InsightEngine",
-        ),
-        quality = DiagnosticQuality.Good,
-    )
+    insights.forEach { insight ->
+        InsightCard(insight)
+    }
 
     ActionSection(
         diagnostics = diagnostics,
@@ -346,6 +281,104 @@ private fun RealityHeroCard(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun InsightCard(insight: TestedInsight) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = insight.domain,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF64748B),
+                    )
+                    Text(
+                        text = insight.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color(0xFF0F172A),
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                Text(
+                    text = insight.confidence.label(),
+                    modifier = Modifier.padding(start = 12.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = insight.confidence.quality().color(),
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.End,
+                )
+            }
+
+            Text(
+                text = insight.answer,
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color(0xFF0F172A),
+                fontWeight = FontWeight.SemiBold,
+            )
+            InsightMetaRow("Zakres", insight.dateRange)
+            InsightMetaRow("Probka", insight.sampleSize.toString())
+            insight.evidence.take(4).forEach { line ->
+                Text(
+                    text = line,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF475569),
+                )
+            }
+            if (insight.limitations.isNotEmpty()) {
+                Text(
+                    text = "Ograniczenie: ${insight.limitations.first()}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF92400E),
+                )
+            }
+            Text(
+                text = "Nastepny test: ${insight.nextStep}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF334155),
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun InsightMetaRow(
+    label: String,
+    value: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = Color(0xFF64748B),
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            color = Color(0xFF64748B),
+            textAlign = TextAlign.End,
+        )
     }
 }
 

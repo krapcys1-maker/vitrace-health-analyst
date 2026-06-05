@@ -329,4 +329,118 @@ interface DailySummaryDao {
         workoutTypes: List<String>,
         limit: Int,
     ): List<MonthlyWorkoutSessionAggregate>
+
+    @Query(
+        """
+        SELECT
+            s.date AS date,
+            s.totalSleepMinutes AS totalSleepMinutes,
+            s.deepSleepMinutes AS deepSleepMinutes,
+            s.remSleepMinutes AS remSleepMinutes,
+            s.sleepScore AS sleepScore,
+            a.steps AS nextDaySteps,
+            COALESCE(w.totalDurationMinutes, 0) AS nextDayWorkoutMinutes,
+            h.avgBpm AS nextDayAvgHeartRateBpm
+        FROM sleep_details s
+        INNER JOIN daily_activity_summaries a ON a.date = date(s.date, '+1 day')
+        LEFT JOIN daily_workout_summaries w ON w.date = date(s.date, '+1 day')
+        LEFT JOIN daily_heart_summaries h ON h.date = date(s.date, '+1 day')
+        WHERE s.totalSleepMinutes > 0
+        ORDER BY s.date ASC
+        """
+    )
+    suspend fun sleepNextDayActivityRows(): List<SleepNextDayActivityRow>
+
+    @Query(
+        """
+        SELECT
+            CASE
+                WHEN EXISTS (
+                    SELECT 1 FROM workout_sessions w
+                    WHERE w.date = s.date
+                ) THEN 'training'
+                ELSE 'non_training'
+            END AS groupName,
+            COUNT(*) AS nights,
+            AVG(s.totalSleepMinutes) AS avgTotalSleepMinutes,
+            AVG(s.deepSleepMinutes) AS avgDeepSleepMinutes,
+            AVG(s.remSleepMinutes) AS avgRemSleepMinutes,
+            AVG(s.sleepScore) AS avgSleepScore
+        FROM sleep_details s
+        WHERE s.totalSleepMinutes > 0
+        GROUP BY groupName
+        """
+    )
+    suspend fun trainingSleepAggregates(): List<TrainingSleepAggregate>
+
+    @Query(
+        """
+        SELECT
+            workoutType AS workoutType,
+            COUNT(*) AS sessionCount,
+            MIN(date) AS firstDate,
+            MAX(date) AS lastDate,
+            COALESCE(SUM(distanceMeters), 0) / 1000.0 AS distanceKm,
+            COUNT(CASE WHEN avgHeartRateBpm IS NOT NULL THEN 1 END) AS heartSessions,
+            COUNT(CASE WHEN vo2Max IS NOT NULL THEN 1 END) AS vo2Sessions
+        FROM workout_sessions
+        GROUP BY workoutType
+        ORDER BY sessionCount DESC
+        """
+    )
+    suspend fun workoutTypeSessionAggregates(): List<WorkoutTypeSessionAggregate>
+
+    @Query(
+        """
+        SELECT
+            CASE
+                WHEN distanceMeters >= 3000 AND distanceMeters < 6000 THEN '3-6 km'
+                WHEN distanceMeters >= 6000 AND distanceMeters < 10000 THEN '6-10 km'
+                WHEN distanceMeters >= 10000 AND distanceMeters < 15000 THEN '10-15 km'
+                ELSE '15+ km'
+            END AS distanceBand,
+            COUNT(*) AS sessionCount,
+            COALESCE(SUM(distanceMeters), 0) / 1000.0 AS distanceKm,
+            AVG(avgHeartRateBpm) AS avgHeartRateBpm,
+            AVG(avgPaceSecondsPerKm) AS avgPaceSecondsPerKm,
+            AVG(CASE WHEN distanceMeters > 0 THEN activeCaloriesKcal / (distanceMeters / 1000.0) END) AS activeCaloriesPerKm,
+            AVG(vo2Max) AS avgVo2Max
+        FROM workout_sessions
+        WHERE workoutType = 'walking'
+          AND date >= :startDate
+          AND date <= :endDate
+          AND distanceMeters >= 3000
+        GROUP BY distanceBand
+        ORDER BY sessionCount DESC
+        """
+    )
+    suspend fun walkingBandsBetween(
+        startDate: String,
+        endDate: String,
+    ): List<WalkingDistanceBandAggregate>
+
+    @Query(
+        """
+        SELECT
+            CASE
+                WHEN distanceMeters >= 3000 AND distanceMeters < 6000 THEN '3-6 km'
+                WHEN distanceMeters >= 6000 AND distanceMeters < 10000 THEN '6-10 km'
+                WHEN distanceMeters >= 10000 AND distanceMeters < 15000 THEN '10-15 km'
+                ELSE '15+ km'
+            END AS distanceBand,
+            COUNT(*) AS sessionCount,
+            COALESCE(SUM(distanceMeters), 0) / 1000.0 AS distanceKm,
+            AVG(avgHeartRateBpm) AS avgHeartRateBpm,
+            AVG(avgPaceSecondsPerKm) AS avgPaceSecondsPerKm,
+            AVG(CASE WHEN distanceMeters > 0 THEN activeCaloriesKcal / (distanceMeters / 1000.0) END) AS activeCaloriesPerKm,
+            AVG(vo2Max) AS avgVo2Max
+        FROM workout_sessions
+        WHERE workoutType = 'walking'
+          AND date < :beforeDate
+          AND distanceMeters >= 3000
+        GROUP BY distanceBand
+        ORDER BY sessionCount DESC
+        """
+    )
+    suspend fun walkingBandsBefore(beforeDate: String): List<WalkingDistanceBandAggregate>
 }
