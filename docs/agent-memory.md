@@ -57,7 +57,7 @@ Local Mi Fitness export summary:
 - Health Connect `TotalCaloriesBurnedRecord` must not be shown as activity calories. It can include basal/resting energy and produced misleading 7/30-day values. Use `ActiveCaloriesBurnedRecord` for movement/workout calories.
 - VitaTrace must not copy Mi Fitness 1:1. Mi Fitness is a source/collector; VitaTrace is the trend, baseline, reliability, and analysis layer above it.
 - Deterministic analysis logic should live outside Compose UI, currently under `app/src/main/java/com/vitrace/app/analysis/`.
-- Main product direction is Personal Body Intelligence: understand the user's own body from long-term personal data, including yearly/monthly steps, estimated km, sleep/activity correlations, cardio efficiency, VO2 max, weight, and future body composition.
+- Main product direction is Personal Body Intelligence: understand the user's own body from long-term personal data, especially yearly/monthly steps, estimated km, sleep/activity relationships, walking cardio efficiency, VO2 in workout context, and heart context where coverage is sufficient.
 - Use configurable `stepsPerKm` for estimated distance from steps; default should be `1250`.
 - Correlation insights require sample size and confidence rules. Do not show claims from fewer than 14 comparable days.
 - User profile currently set in app DB: male, 40 years, 186 cm, 88 kg, `stepsPerKm = 1250`.
@@ -66,9 +66,9 @@ Local Mi Fitness export summary:
 - Do not mark history import correct until `tools/audit_mifitness_import.py` reports 0 bad activity days, 0 bad months, 0 bad years, and 0 extra positive activity days.
 - Latest verified history audit: 1,031 canonical activity days, 46 months, 6 years, all matching; 2024-09 = 325,587 steps; 2025 = 3,191,192 steps; best month = 2026-04 with 559,104 steps.
 - Latest live-vs-history comparison: Health Connect is connected but much poorer than the Mi Fitness export on 2026-06-05. Live has current steps/activity/heart/exercise records, but 0 Health Connect sleep, SpO2, VO2 max, and weight records in the latest 30-day quality snapshot. Keep Mi Fitness export as historical baseline and Health Connect as live/freshness source.
-- Main UI direction changed again after user review: visible domain tabs are removed from the start screen for now. Do not keep building `Sen/Sport/Waga/Zdrowie` as shallow UI surfaces until the underlying data reality and hypothesis engine are clear.
+- Main UI direction changed again after user review: visible domain tabs are removed from the start screen for now. Do not keep building shallow domain surfaces until the underlying data reality and hypothesis engine are clear.
 - Current start screen should answer: what data is strong, what data is weak, what must not be claimed, and which hypotheses are worth testing.
-- Important product rule: `Waga` must distinguish a simple historical mass record from full scale/body-composition data. Body composition means weight, body fat, muscle, water, etc. Do not present pulse, VO2 max, or SpO2 as weight/scale data. Those signals can be correlated with weight later in `Analiza` or `Zdrowie`, but the app must clearly say when body-composition data is not available yet.
+- Current product rule: external scale/body-composition is not an active app module now. Do not build screens, tabs, or conclusions around it until real records exist.
 - Later domain drill-down may return, but only after each domain has tested insights, sample size, date range, confidence, and limitations. Do not use tabs as a substitute for analysis.
 - Sport must keep `Kroki` separate from training-derived `Chodzenie` and `Bieganie`. Steps come from daily activity summaries. Walking/running come from Mi Fitness sport records and `daily_workout_type_summaries`.
 - `Zdrowie` now includes a local health journal direction: daily notes, subjective physical/mental state, future lab scans, and AI summaries comparing newest lab results with historical results and daily context.
@@ -93,6 +93,7 @@ Local Mi Fitness export summary:
 - Public personal analytics architecture: `docs/personal-analytics-architecture.md`
 - Public local importer tool: `tools/import_mifitness_history_to_db.py`
 - Public local import audit tool: `tools/audit_mifitness_import.py`
+- Public insight research reset: `docs/insight-research-reset.md`
 - Public living memory: `docs/agent-memory.md`
 
 ## Next Recommended Steps
@@ -140,6 +141,7 @@ Local Mi Fitness export summary:
 | 2026-06-05 | `vitrace/mvp-foundation` | Started Apple Watch/Fitness-inspired visual direction for analytical screens: dark high-contrast insight card, bright HR/pace colors, compact metric chips, and a first Canvas line chart in Sport/Analiza. Shortened the analysis steps list to 6 months so the insight is no longer buried. | `:app:assembleDebug` passed; APK installed; UI dump and screenshot verified the sport card, chart legend 2025-10 to 2026-05, no mojibake in app/docs, and DB check confirmed 2026-06 is excluded from sport-efficiency conclusions. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Stopped UI expansion after reviewing real data and researching better wearable insight patterns. Added reset doc: strongest data is yearly/monthly activity and walking sessions; sleep is medium; running, weight, SpO2, body composition are weak for claims. | Manual SQLite review: 1,073 activity days, 133 sleep nights, 303 workouts, 273 walking sessions, 7 running sessions, 3 weight records. Web review: Apple/Oura/Garmin emphasize personal baselines, readiness/recovery, training load, typical ranges, and confidence. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Removed visible app tabs from the main Android screen and replaced the start route with a data-reality screen: what we know, what not to fake, sensible hypotheses, and the next InsightEngine module. | `:app:assembleDebug` passed; APK installed on phone; UI verification was blocked because the phone was locked at the PIN screen during ADB dump/screenshot. |
+| 2026-06-05 | `vitrace/mvp-foundation` | Hard reset after user review: removed scale/body-composition language from the visible data-reality screen and added a research-backed insight reset document. Current direction is one insight feed, no domain tabs, no unsupported modules, no calorie-first conclusions. | Manual SQLite checks: same-day steps/sleep correlations remain weak; training-day sleep did not show a simple clear benefit; walking remains the richest workout signal. Web research checked wearable accuracy, exercise/sleep, resting heart baselines, bidirectional sleep/activity, and wearable sleep staging. |
 
 ## Update Protocol
 
