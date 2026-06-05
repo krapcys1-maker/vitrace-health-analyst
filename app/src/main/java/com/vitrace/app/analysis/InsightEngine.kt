@@ -123,7 +123,7 @@ object InsightEngine {
             confidence = AnalysisConfidence.High,
             limitations = listOf(
                 "Health Connect live jest ubozszy niz import Mi Fitness",
-                "nie budujemy teraz modulu skali ani skladu ciala",
+                "nie budujemy teraz modulow bez realnego sygnalu danych",
                 "kalorie z zegarka sa sygnalem pomocniczym",
             ),
             nextStep = "pierwsze wnioski liczyc z importu historycznego i dopiero potem laczyc z live",

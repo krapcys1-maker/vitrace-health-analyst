@@ -225,8 +225,8 @@ private fun DataRealityScreen(
     val insights = diagnostics.insights
 
     RealityHeroCard(
-        title = "Wnioski z danych",
-        answer = "To jest pierwszy feed liczony z bazy: pytanie, odpowiedz, dowody, zakres dat, probka, pewnosc i ograniczenia.",
+        title = "Feed wnioskow",
+        answer = "Najpierw odpowiedz i pewnosc. Dowody, ograniczenia i nastepny test sa pod szczegolami.",
         evidence = listOf(
             "wnioski: ${insights.size}",
             "wysoka pewnosc: ${insights.count { insight -> insight.confidence == AnalysisConfidence.High }}",
@@ -286,6 +286,9 @@ private fun RealityHeroCard(
 
 @Composable
 private fun InsightCard(insight: TestedInsight) {
+    var expanded by remember { mutableStateOf(false) }
+    val visibleEvidence = if (expanded) insight.evidence else insight.evidence.take(2)
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
@@ -332,41 +335,75 @@ private fun InsightCard(insight: TestedInsight) {
                 color = Color(0xFF0F172A),
                 fontWeight = FontWeight.SemiBold,
             )
-            InsightMetaRow("Zakres", insight.dateRange)
-            InsightMetaRow("Probka", insight.sampleSize.toString())
-            insight.evidence.take(4).forEach { line ->
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                InsightPill(
+                    label = "Probka",
+                    value = insight.sampleSize.toString(),
+                    modifier = Modifier.weight(1f),
+                )
+                InsightPill(
+                    label = "Zakres",
+                    value = insight.dateRange,
+                    modifier = Modifier.weight(2f),
+                )
+            }
+
+            visibleEvidence.forEach { line ->
                 Text(
                     text = line,
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color(0xFF475569),
                 )
             }
-            if (insight.limitations.isNotEmpty()) {
+
+            if (!expanded && insight.evidence.size > visibleEvidence.size) {
                 Text(
-                    text = "Ograniczenie: ${insight.limitations.first()}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFF92400E),
+                    text = "+${insight.evidence.size - visibleEvidence.size} dowodow w szczegolach",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF64748B),
                 )
             }
-            Text(
-                text = "Nastepny test: ${insight.nextStep}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFF334155),
-                fontWeight = FontWeight.SemiBold,
-            )
+
+            if (expanded) {
+                insight.limitations.forEach { limitation ->
+                    Text(
+                        text = "Ograniczenie: $limitation",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF92400E),
+                    )
+                }
+                Text(
+                    text = "Nastepny test: ${insight.nextStep}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF334155),
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+
+            OutlinedButton(
+                onClick = { expanded = !expanded },
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+            ) {
+                Text(if (expanded) "Zwin" else "Szczegoly")
+            }
         }
     }
 }
 
 @Composable
-private fun InsightMetaRow(
+private fun InsightPill(
     label: String,
     value: String,
+    modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(
             text = label,
@@ -376,8 +413,10 @@ private fun InsightMetaRow(
         Text(
             text = value,
             style = MaterialTheme.typography.bodySmall,
-            color = Color(0xFF64748B),
-            textAlign = TextAlign.End,
+            color = Color(0xFF0F172A),
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
