@@ -277,6 +277,41 @@ private fun TabSection(
 }
 
 @Composable
+private fun SectionSwitch(
+    labels: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        labels.forEachIndexed { index, label ->
+            val modifier = Modifier
+                .weight(1f)
+                .height(44.dp)
+            if (index == selectedIndex) {
+                Button(
+                    onClick = { onSelect(index) },
+                    modifier = modifier,
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                ) {
+                    Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            } else {
+                OutlinedButton(
+                    onClick = { onSelect(index) },
+                    modifier = modifier,
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                ) {
+                    Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun DashboardTab(
     diagnostics: HealthConnectDiagnostics?,
     loading: Boolean,
@@ -299,6 +334,7 @@ private fun DashboardTab(
 
 @Composable
 private fun SleepTab(summary: SleepDomainSummary?) {
+    var section by remember { mutableStateOf(0) }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SectionTitle("Sen")
         if (summary == null) {
@@ -309,17 +345,24 @@ private fun SleepTab(summary: SleepDomainSummary?) {
             )
             return
         }
-        SleepLatestCard(summary)
-        SleepMonthlyCard(summary)
-        AnalysisCard(
-            title = "Analiza snu",
-            lines = listOf(
-                "AI pozniej dostanie agregaty snu, aktywnosci i pulsu",
-                "najpierw liczymy korelacje lokalnie i pokazujemy pewnosc wniosku",
-                "nie bedziemy udawac zaleznosci przy zbyt malej probce",
-            ),
-            quality = if (summary.last30SleepDays >= 14) DiagnosticQuality.Good else DiagnosticQuality.Warning,
+        SectionSwitch(
+            labels = listOf("Przeglad", "Historia", "Analiza"),
+            selectedIndex = section,
+            onSelect = { index -> section = index },
         )
+        when (section) {
+            0 -> SleepLatestCard(summary)
+            1 -> SleepMonthlyCard(summary)
+            else -> AnalysisCard(
+                title = "Analiza snu",
+                lines = listOf(
+                    "AI pozniej dostanie agregaty snu, aktywnosci i pulsu",
+                    "najpierw liczymy korelacje lokalnie i pokazujemy pewnosc wniosku",
+                    "nie bedziemy udawac zaleznosci przy zbyt malej probce",
+                ),
+                quality = if (summary.last30SleepDays >= 14) DiagnosticQuality.Good else DiagnosticQuality.Warning,
+            )
+        }
     }
 }
 
@@ -377,6 +420,7 @@ private fun SleepMonthlyCard(summary: SleepDomainSummary) {
 
 @Composable
 private fun SportTab(summary: SportDomainSummary?) {
+    var section by remember { mutableStateOf(0) }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SectionTitle("Sport")
         if (summary == null) {
@@ -387,38 +431,49 @@ private fun SportTab(summary: SportDomainSummary?) {
             )
             return
         }
-        TodayTiles(window = summary.today)
-        PeriodSummaryCard(title = "7 dni", window = summary.last7Days)
-        PeriodSummaryCard(title = "30 dni", window = summary.last30Days)
-        WorkoutSummaryCard(summary)
-        LongTermActivitySection(
-            summary = LongTermActivitySummary(
-                stepsPerKm = summary.stepsPerKm,
-                yearly = summary.yearly,
-                bestMonth = summary.bestMonth,
-                recentMonths = summary.recentMonths,
-            )
+        SectionSwitch(
+            labels = listOf("Dzisiaj", "Historia", "Analiza"),
+            selectedIndex = section,
+            onSelect = { index -> section = index },
         )
-        PeriodBarsCard(
-            title = "Kroki miesiecznie",
-            rows = summary.recentMonths.map { month ->
-                BarRowData(
-                    label = month.period,
-                    value = month.steps.toDouble(),
-                    text = "${month.steps.formatWhole()} krokow | ${month.estimatedKm.format1()} km",
+        when (section) {
+            0 -> {
+                TodayTiles(window = summary.today)
+                PeriodSummaryCard(title = "7 dni", window = summary.last7Days)
+                PeriodSummaryCard(title = "30 dni", window = summary.last30Days)
+                WorkoutSummaryCard(summary)
+            }
+            1 -> {
+                LongTermActivitySection(
+                    summary = LongTermActivitySummary(
+                        stepsPerKm = summary.stepsPerKm,
+                        yearly = summary.yearly,
+                        bestMonth = summary.bestMonth,
+                        recentMonths = summary.recentMonths,
+                    )
                 )
-            },
-            emptyText = "brak miesiecy aktywnosci",
-        )
-        AnalysisCard(
-            title = "Analiza sportu",
-            lines = listOf(
-                "tu rozdzielimy kroki, chodzenie, bieganie i treningi",
-                "dla biegania bedziemy sprawdzac tempo, puls i dlugosc sesji",
-                "wniosek typu: dluzej biegasz na nizszym pulsie wymaga serii treningow",
-            ),
-            quality = if (summary.workoutLast30.sessionCount > 0) DiagnosticQuality.Good else DiagnosticQuality.Neutral,
-        )
+                PeriodBarsCard(
+                    title = "Kroki miesiecznie",
+                    rows = summary.recentMonths.map { month ->
+                        BarRowData(
+                            label = month.period,
+                            value = month.steps.toDouble(),
+                            text = "${month.steps.formatWhole()} krokow | ${month.estimatedKm.format1()} km",
+                        )
+                    },
+                    emptyText = "brak miesiecy aktywnosci",
+                )
+            }
+            else -> AnalysisCard(
+                title = "Analiza sportu",
+                lines = listOf(
+                    "tu rozdzielimy kroki, chodzenie, bieganie i treningi",
+                    "dla biegania bedziemy sprawdzac tempo, puls i dlugosc sesji",
+                    "wniosek typu: dluzej biegasz na nizszym pulsie wymaga serii treningow",
+                ),
+                quality = if (summary.workoutLast30.sessionCount > 0) DiagnosticQuality.Good else DiagnosticQuality.Neutral,
+            )
+        }
     }
 }
 
@@ -460,6 +515,7 @@ private fun WorkoutSummaryCard(summary: SportDomainSummary) {
 
 @Composable
 private fun WeightTab(summary: BodyDomainSummary?) {
+    var section by remember { mutableStateOf(0) }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SectionTitle("Waga")
         if (summary == null) {
@@ -470,62 +526,74 @@ private fun WeightTab(summary: BodyDomainSummary?) {
             )
             return
         }
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-        ) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    text = "Ostatnie dane",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color(0xFF0F172A),
-                    fontWeight = FontWeight.Bold,
-                )
-                CompactMetricRow(
-                    label = "Data",
-                    value = summary.latestDate ?: "brak",
-                    quality = if (summary.latestDate == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
-                )
-                CompactMetricRow(
-                    label = "Waga",
-                    value = summary.latestWeightKg?.let { "${it.format1()} kg" } ?: "brak",
-                    quality = if (summary.latestWeightKg == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
-                )
-                CompactMetricRow(
-                    label = "VO2 max",
-                    value = summary.latestVo2Max?.format1() ?: "brak",
-                    quality = if (summary.latestVo2Max == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
-                )
-                CompactMetricRow(
-                    label = "SpO2",
-                    value = summary.latestSpo2Percent?.let { "${it.format1()}%" } ?: "brak",
-                    quality = if (summary.latestSpo2Percent == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
-                )
-            }
+        SectionSwitch(
+            labels = listOf("Teraz", "Dane", "Analiza"),
+            selectedIndex = section,
+            onSelect = { index -> section = index },
+        )
+        when (section) {
+            0 -> BodyLatestCard(summary)
+            1 -> AnalysisCard(
+                title = "Pokrycie danych ciala",
+                lines = listOf(
+                    "dni z danymi: ${summary.bodyDays}",
+                    "waga: ${summary.weightRecords} rekordow",
+                    "VO2 max: ${summary.vo2Records} rekordow",
+                    "SpO2: ${summary.spo2Records} rekordow",
+                ),
+                quality = summary.bodyDays.qualityForCount(),
+            )
+            else -> AnalysisCard(
+                title = "Docelowo",
+                lines = listOf(
+                    "wykres wagi, miesni, tluszczu i nawodnienia",
+                    "reczne wpisy albo import ze zdjecia wyniku z wagi",
+                    "korelacja: waga, puls, sen i meczliwosc",
+                ),
+                quality = DiagnosticQuality.Neutral,
+            )
         }
-        AnalysisCard(
-            title = "Pokrycie danych ciala",
-            lines = listOf(
-                "dni z danymi: ${summary.bodyDays}",
-                "waga: ${summary.weightRecords} rekordow",
-                "VO2 max: ${summary.vo2Records} rekordow",
-                "SpO2: ${summary.spo2Records} rekordow",
-            ),
-            quality = summary.bodyDays.qualityForCount(),
-        )
-        AnalysisCard(
-            title = "Docelowo",
-            lines = listOf(
-                "wykres wagi, miesni, tluszczu i nawodnienia",
-                "reczne wpisy albo import ze zdjecia wyniku z wagi",
-                "korelacja: waga, puls, sen i meczliwosc",
-            ),
-            quality = DiagnosticQuality.Neutral,
-        )
+    }
+}
+
+@Composable
+private fun BodyLatestCard(summary: BodyDomainSummary) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "Ostatnie dane",
+                style = MaterialTheme.typography.titleMedium,
+                color = Color(0xFF0F172A),
+                fontWeight = FontWeight.Bold,
+            )
+            CompactMetricRow(
+                label = "Data",
+                value = summary.latestDate ?: "brak",
+                quality = if (summary.latestDate == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
+            )
+            CompactMetricRow(
+                label = "Waga",
+                value = summary.latestWeightKg?.let { "${it.format1()} kg" } ?: "brak",
+                quality = if (summary.latestWeightKg == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
+            )
+            CompactMetricRow(
+                label = "VO2 max",
+                value = summary.latestVo2Max?.format1() ?: "brak",
+                quality = if (summary.latestVo2Max == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
+            )
+            CompactMetricRow(
+                label = "SpO2",
+                value = summary.latestSpo2Percent?.let { "${it.format1()}%" } ?: "brak",
+                quality = if (summary.latestSpo2Percent == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
+            )
+        }
     }
 }
 
@@ -536,47 +604,59 @@ private fun HealthTab(
     onSaveNote: (String) -> Unit,
 ) {
     var noteText by remember { mutableStateOf("") }
+    var section by remember { mutableStateOf(0) }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SectionTitle("Zdrowie")
-        HealthNoteCard(
-            text = noteText,
-            onTextChange = { value -> noteText = value },
-            saving = saving,
-            onSave = {
-                onSaveNote(noteText)
-                noteText = ""
-            },
+        SectionSwitch(
+            labels = listOf("Notatki", "Badania", "Wnioski"),
+            selectedIndex = section,
+            onSelect = { index -> section = index },
         )
-        HealthJournalCard(journal = journal)
-        AnalysisCard(
-            title = "Analiza wynikow",
-            lines = listOf(
-                "najnowsze wyniki porownamy z Twoja historia",
-                "AI podsumuje zmiany, ale nie bedzie diagnozowac",
-                "wyniki beda laczone z notatkami, snem, sportem, pulsem i waga",
-            ),
-            quality = DiagnosticQuality.Neutral,
-        )
-        AnalysisCard(
-            title = "Co mozna z tego wyciagnac",
-            lines = listOf(
-                "czy kiepskie samopoczucie wraca po slabym snie",
-                "czy mocny trening obniza energie nastepnego dnia",
-                "czy zmiany w wadze/VO2 ida razem z pulsem i regeneracja",
-                "czy wyniki krwi zmieniaja sie po okresach wiekszej aktywnosci",
-            ),
-            quality = DiagnosticQuality.Neutral,
-        )
-        AnalysisCard(
-            title = "Furtka techniczna",
-            lines = listOf(
-                "skany badan trafia do lokalnego magazynu dokumentow",
-                "odczyt OCR musi byc potwierdzony przed analiza",
-                "notatki dzienne beda laczone z pomiarami z tego samego dnia",
-            ),
-            quality = DiagnosticQuality.Neutral,
-        )
+        when (section) {
+            0 -> {
+                HealthNoteCard(
+                    text = noteText,
+                    onTextChange = { value -> noteText = value },
+                    saving = saving,
+                    onSave = {
+                        onSaveNote(noteText)
+                        noteText = ""
+                    },
+                )
+                HealthJournalCard(journal = journal)
+            }
+            1 -> {
+                AnalysisCard(
+                    title = "Analiza wynikow",
+                    lines = listOf(
+                        "najnowsze wyniki porownamy z Twoja historia",
+                        "AI podsumuje zmiany, ale nie bedzie diagnozowac",
+                        "wyniki beda laczone z notatkami, snem, sportem, pulsem i waga",
+                    ),
+                    quality = DiagnosticQuality.Neutral,
+                )
+                AnalysisCard(
+                    title = "Furtka techniczna",
+                    lines = listOf(
+                        "skany badan trafia do lokalnego magazynu dokumentow",
+                        "odczyt OCR musi byc potwierdzony przed analiza",
+                        "notatki dzienne beda laczone z pomiarami z tego samego dnia",
+                    ),
+                    quality = DiagnosticQuality.Neutral,
+                )
+            }
+            else -> AnalysisCard(
+                title = "Co mozna z tego wyciagnac",
+                lines = listOf(
+                    "czy kiepskie samopoczucie wraca po slabym snie",
+                    "czy mocny trening obniza energie nastepnego dnia",
+                    "czy zmiany w wadze/VO2 ida razem z pulsem i regeneracja",
+                    "czy wyniki krwi zmieniaja sie po okresach wiekszej aktywnosci",
+                ),
+                quality = DiagnosticQuality.Neutral,
+            )
+        }
     }
 }
 
@@ -679,35 +759,47 @@ private fun AnalysisTab(
     bodySummary: BodyDomainSummary?,
 ) {
     val report = buildVitaTraceAnalysis(dashboard)
+    var section by remember { mutableStateOf(0) }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SectionTitle("Analiza")
-        AnalysisCard(
-            title = "Co analizujemy",
-            lines = listOf(
-                "sen kontra aktywnosc fizyczna",
-                "treningi kontra puls i zmeczenie",
-                "waga i sklad ciala kontra sen, puls i forma",
-            ),
-            quality = DiagnosticQuality.Good,
+        SectionSwitch(
+            labels = listOf("Wnioski", "Gotowosc", "Historia"),
+            selectedIndex = section,
+            onSelect = { index -> section = index },
         )
-        AnalysisCard(report.readiness)
-        AnalysisCard(report.currentInsight)
-        SleepActivityCorrelationCard(sleepSummary = sleepSummary, sportSummary = sportSummary)
-        AnalysisCard(
-            title = "Gotowosc domen",
-            lines = listOf(
-                "sen: ${sleepSummary?.last30SleepDays ?: 0} dni w ostatnim oknie",
-                "sport: ${sportSummary?.last30Days?.daysWithActivity ?: 0} aktywnych dni",
-                "waga/cialo: ${bodySummary?.bodyDays ?: 0} dni z sygnalem",
-            ),
-            quality = if ((sleepSummary?.last30SleepDays ?: 0) >= 14 && (sportSummary?.last30Days?.daysWithActivity ?: 0) >= 14) {
-                DiagnosticQuality.Good
-            } else {
-                DiagnosticQuality.Warning
-            },
-        )
-        LongTermActivitySection(summary = longTermActivity)
+        when (section) {
+            0 -> {
+                AnalysisCard(
+                    title = "Co analizujemy",
+                    lines = listOf(
+                        "sen kontra aktywnosc fizyczna",
+                        "treningi kontra puls i zmeczenie",
+                        "waga i sklad ciala kontra sen, puls i forma",
+                    ),
+                    quality = DiagnosticQuality.Good,
+                )
+                AnalysisCard(report.currentInsight)
+                SleepActivityCorrelationCard(sleepSummary = sleepSummary, sportSummary = sportSummary)
+            }
+            1 -> {
+                AnalysisCard(report.readiness)
+                AnalysisCard(
+                    title = "Gotowosc domen",
+                    lines = listOf(
+                        "sen: ${sleepSummary?.last30SleepDays ?: 0} dni w ostatnim oknie",
+                        "sport: ${sportSummary?.last30Days?.daysWithActivity ?: 0} aktywnych dni",
+                        "waga/cialo: ${bodySummary?.bodyDays ?: 0} dni z sygnalem",
+                    ),
+                    quality = if ((sleepSummary?.last30SleepDays ?: 0) >= 14 && (sportSummary?.last30Days?.daysWithActivity ?: 0) >= 14) {
+                        DiagnosticQuality.Good
+                    } else {
+                        DiagnosticQuality.Warning
+                    },
+                )
+            }
+            else -> LongTermActivitySection(summary = longTermActivity)
+        }
     }
 }
 
@@ -746,19 +838,31 @@ private fun OptionsTab(
     onRequestPermissions: () -> Unit,
     onRefresh: () -> Unit,
 ) {
+    var section by remember { mutableStateOf(0) }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SectionTitle("Opcje")
-        ProfileCard(profile = profile)
-        DataConnectionCard(diagnostics = diagnostics)
-        ActionSection(
-            diagnostics = diagnostics,
-            loading = loading,
-            onRequestPermissions = onRequestPermissions,
-            onRefresh = onRefresh,
+        SectionSwitch(
+            labels = listOf("Profil", "Sync", "Zrodla"),
+            selectedIndex = section,
+            onSelect = { index -> section = index },
         )
-        diagnostics?.error?.let { error -> SyncNotice(error) }
-        SourceCoverageSection(summary = diagnostics?.dailySyncSummary)
-        DataQualitySection(items = diagnostics?.dataQualityItems ?: emptyList())
+        when (section) {
+            0 -> ProfileCard(profile = profile)
+            1 -> {
+                DataConnectionCard(diagnostics = diagnostics)
+                ActionSection(
+                    diagnostics = diagnostics,
+                    loading = loading,
+                    onRequestPermissions = onRequestPermissions,
+                    onRefresh = onRefresh,
+                )
+                diagnostics?.error?.let { error -> SyncNotice(error) }
+            }
+            else -> {
+                SourceCoverageSection(summary = diagnostics?.dailySyncSummary)
+                DataQualitySection(items = diagnostics?.dataQualityItems ?: emptyList())
+            }
+        }
     }
 }
 
