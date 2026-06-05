@@ -110,8 +110,6 @@ private fun HealthConnectScreen() {
     val scope = rememberCoroutineScope()
     var diagnostics by remember { mutableStateOf<HealthConnectDiagnostics?>(null) }
     var loading by remember { mutableStateOf(false) }
-    var savingNote by remember { mutableStateOf(false) }
-    var selectedTab by remember { mutableStateOf(AppTab.Sleep) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = PermissionController.createRequestPermissionResultContract(),
@@ -134,21 +132,6 @@ private fun HealthConnectScreen() {
         }
     }
 
-    fun saveHealthNote(text: String) {
-        scope.launch {
-            savingNote = true
-            try {
-                HealthConnectDiagnosticsRepository.saveHealthNote(context, text)
-                diagnostics = HealthConnectDiagnosticsRepository.load(
-                    context = context,
-                    syncFromHealthConnect = false,
-                )
-            } finally {
-                savingNote = false
-            }
-        }
-    }
-
     LaunchedEffect(Unit) {
         refresh(syncFromHealthConnect = false)
     }
@@ -161,52 +144,23 @@ private fun HealthConnectScreen() {
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Header()
-        TabSection(
-            selectedTab = selectedTab,
-            onSelectTab = { tab -> selectedTab = tab },
-        )
         Column(
             modifier = Modifier
                 .weight(1f)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            when (selectedTab) {
-                AppTab.Sleep -> SleepTab(
-                    summary = diagnostics?.sleepSummary,
-                    analysisContext = diagnostics?.analysisContext,
-                )
-                AppTab.Sport -> SportTab(
-                    summary = diagnostics?.sportSummary,
-                    analysisContext = diagnostics?.analysisContext,
-                )
-                AppTab.Weight -> WeightTab(summary = diagnostics?.bodySummary)
-                AppTab.Health -> HealthTab(
-                    journal = diagnostics?.healthJournal,
-                    saving = savingNote,
-                    onSaveNote = { text -> saveHealthNote(text) },
-                )
-                AppTab.Analysis -> AnalysisTab(
-                    dashboard = diagnostics?.dashboard,
-                    longTermActivity = diagnostics?.longTermActivity,
-                    sleepSummary = diagnostics?.sleepSummary,
-                    sportSummary = diagnostics?.sportSummary,
-                    bodySummary = diagnostics?.bodySummary,
-                    analysisContext = diagnostics?.analysisContext,
-                )
-                AppTab.Options -> OptionsTab(
-                    diagnostics = diagnostics,
-                    loading = loading,
-                    profile = diagnostics?.profile,
-                    onRequestPermissions = {
-                        val openedSettings = openHealthConnectPermissions(context)
-                        if (!openedSettings) {
-                            permissionLauncher.launch(HealthConnectDiagnosticsRepository.requiredPermissions)
-                        }
-                    },
-                    onRefresh = { refresh(syncFromHealthConnect = true) },
-                )
-            }
+            DataRealityScreen(
+                diagnostics = diagnostics,
+                loading = loading,
+                onRequestPermissions = {
+                    val openedSettings = openHealthConnectPermissions(context)
+                    if (!openedSettings) {
+                        permissionLauncher.launch(HealthConnectDiagnosticsRepository.requiredPermissions)
+                    }
+                },
+                onRefresh = { refresh(syncFromHealthConnect = true) },
+            )
             Spacer(modifier = Modifier.height(96.dp))
         }
     }
@@ -241,6 +195,156 @@ private fun Header() {
             style = MaterialTheme.typography.titleMedium,
             color = Color(0xFF475569),
         )
+    }
+}
+
+@Composable
+private fun DataRealityScreen(
+    diagnostics: HealthConnectDiagnostics?,
+    loading: Boolean,
+    onRequestPermissions: () -> Unit,
+    onRefresh: () -> Unit,
+) {
+    if (diagnostics == null) {
+        AnalysisCard(
+            title = if (loading) "Czytam lokalna baze" else "Brak kontekstu",
+            lines = listOf(
+                "najpierw ladujemy dane z telefonu",
+                "ten ekran ma pokazac co da sie z nich uczciwie wyczytac",
+            ),
+            quality = DiagnosticQuality.Neutral,
+        )
+        return
+    }
+
+    diagnostics.error?.let { error ->
+        SyncNotice(error)
+    }
+
+    val longTerm = diagnostics.longTermActivity
+    val analysis = diagnostics.analysisContext
+    val sport = diagnostics.sportSummary
+    val body = diagnostics.bodySummary
+    val yearlyRows = longTerm?.yearly.orEmpty()
+    val bestYear = yearlyRows.maxByOrNull { row -> row.steps }
+    val latestYear = yearlyRows.lastOrNull()
+    val sleepDays = analysis?.sleepActivityComparison?.totalSampleDays
+        ?: diagnostics.sleepSummary?.last30SleepDays
+        ?: 0
+    val walkingTrendRows = analysis?.monthlySportTrends.orEmpty()
+        .count { trend -> trend.workoutType == "walking" }
+    val runningConfidence = analysis?.sportEfficiencyComparisons
+        ?.firstOrNull { comparison -> comparison.workoutType == "running" }
+        ?.confidence
+    val bodyCompositionReady = (body?.bodyFatRecords ?: 0) > 0 || (body?.muscleRecords ?: 0) > 0
+
+    RealityHeroCard(
+        title = "Stop: najpierw sens danych",
+        answer = "Nie robimy teraz zakladek ani ladnych wykresow. Budujemy silnik hipotez: co wiemy, czego nie wiemy i jaka jest pewnosc.",
+        evidence = listOf(
+            "kroki i km: mocny dlugi sygnal",
+            "sen: sredni sygnal, $sleepDays wspolnych dni snu i aktywnosci",
+            "bieganie, waga i sklad ciala: za malo danych na mocne wnioski",
+        ),
+    )
+
+    AnalysisCard(
+        title = "Co wiemy dobrze",
+        lines = buildList {
+            if (yearlyRows.isNotEmpty()) {
+                add("aktywnosc: ${yearlyRows.size} lat z krokami/km")
+                bestYear?.let { year ->
+                    add("najmocniejszy rok: ${year.period}, ${year.steps.formatWhole()} krokow, ${year.estimatedKm.format1()} km")
+                }
+                latestYear?.let { year ->
+                    add("ostatni rok w danych: ${year.period}, ${year.steps.formatWhole()} krokow, ${year.estimatedKm.format1()} km")
+                }
+            } else {
+                add("aktywnosc: brak rocznych podsumowan")
+            }
+            add("chodzenie: ${sport?.walkingLast30?.sessionCount ?: 0} sesje w ostatnich 30 dniach")
+            add("chodzenie historycznie: $walkingTrendRows miesiecy treningowych do porownan")
+            add("VO2: jest glownie przy treningach, mozna sprawdzac trend ostroznie")
+        },
+        quality = DiagnosticQuality.Good,
+    )
+
+    AnalysisCard(
+        title = "Czego nie wolno udawac",
+        lines = buildList {
+            add("proste wiecej krokow = lepszy sen nie wyszlo w recznym przegladzie")
+            add("bieganie: ${runningConfidence?.label() ?: "za malo danych"} - najpierw lista sesji, nie trend")
+            add("waga: ${body?.weightRecords ?: 0} rekordy, za malo na korelacje")
+            add("sklad ciala: ${if (bodyCompositionReady) "sa rekordy" else "brak danych"}")
+            add("SpO2 i Health Connect live sa dodatkiem, nie glowna historia")
+        },
+        quality = DiagnosticQuality.Warning,
+    )
+
+    AnalysisCard(
+        title = "Hipotezy, ktore maja sens",
+        lines = listOf(
+            "1. Czy aktywnosc wplywa na sen? Najpierw pokazac, ze prosta zaleznosc jest slaba albo zadna.",
+            "2. Czy chodzenie przy podobnym dystansie/tempie wymaga nizszego tetna niz kiedys?",
+            "3. Czy po slabszym snie spada nastepnego dnia aktywnosc albo rosnie tetno?",
+            "4. Czy VO2 z treningow idzie w gore/dol w okresach, gdzie danych jest dosc?",
+        ),
+        quality = DiagnosticQuality.Neutral,
+    )
+
+    AnalysisCard(
+        title = "Nastepny modul do zrobienia",
+        lines = listOf(
+            "InsightEngine zamiast zakladek",
+            "kazdy wniosek: odpowiedz, dowody, zakres dat, probka, pewnosc, ograniczenia",
+            "AI dopiero tlumaczy gotowe hipotezy, nie wymysla ich z kafelkow",
+        ),
+        quality = DiagnosticQuality.Good,
+    )
+
+    ActionSection(
+        diagnostics = diagnostics,
+        loading = loading,
+        onRequestPermissions = onRequestPermissions,
+        onRefresh = onRefresh,
+    )
+}
+
+@Composable
+private fun RealityHeroCard(
+    title: String,
+    answer: String,
+    evidence: List<String>,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF09090B)),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = answer,
+                style = MaterialTheme.typography.titleLarge,
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+            )
+            evidence.forEach { line ->
+                Text(
+                    text = line,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFFD4D4D8),
+                )
+            }
+        }
     }
 }
 

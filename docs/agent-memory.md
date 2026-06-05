@@ -66,9 +66,10 @@ Local Mi Fitness export summary:
 - Do not mark history import correct until `tools/audit_mifitness_import.py` reports 0 bad activity days, 0 bad months, 0 bad years, and 0 extra positive activity days.
 - Latest verified history audit: 1,031 canonical activity days, 46 months, 6 years, all matching; 2024-09 = 325,587 steps; 2025 = 3,191,192 steps; best month = 2026-04 with 559,104 steps.
 - Latest live-vs-history comparison: Health Connect is connected but much poorer than the Mi Fitness export on 2026-06-05. Live has current steps/activity/heart/exercise records, but 0 Health Connect sleep, SpO2, VO2 max, and weight records in the latest 30-day quality snapshot. Keep Mi Fitness export as historical baseline and Health Connect as live/freshness source.
-- Main UI direction changed from diagnostic tabs to domain tabs: `Sen`, `Sport`, `Waga`, `Zdrowie`, `Analiza`, `Opcje`. Synchronization and permissions belong only in `Opcje`; health domains should show useful human summaries, trends, and future AI analysis entry points.
+- Main UI direction changed again after user review: visible domain tabs are removed from the start screen for now. Do not keep building `Sen/Sport/Waga/Zdrowie` as shallow UI surfaces until the underlying data reality and hypothesis engine are clear.
+- Current start screen should answer: what data is strong, what data is weak, what must not be claimed, and which hypotheses are worth testing.
 - Important product rule: `Waga` must distinguish a simple historical mass record from full scale/body-composition data. Body composition means weight, body fat, muscle, water, etc. Do not present pulse, VO2 max, or SpO2 as weight/scale data. Those signals can be correlated with weight later in `Analiza` or `Zdrowie`, but the app must clearly say when body-composition data is not available yet.
-- Domain tabs should not dump every card into one long scroll. Each domain should use internal sections, for example `Przeglad / Historia / Analiza`, so the user manages one focused view at a time.
+- Later domain drill-down may return, but only after each domain has tested insights, sample size, date range, confidence, and limitations. Do not use tabs as a substitute for analysis.
 - Sport must keep `Kroki` separate from training-derived `Chodzenie` and `Bieganie`. Steps come from daily activity summaries. Walking/running come from Mi Fitness sport records and `daily_workout_type_summaries`.
 - `Zdrowie` now includes a local health journal direction: daily notes, subjective physical/mental state, future lab scans, and AI summaries comparing newest lab results with historical results and daily context.
 - Course correction from 2026-06-05: daily aggregate tables are not enough for the product goal. They are useful for fast totals and UI checks, especially yearly/monthly steps and estimated kilometers, but the analytical foundation must preserve rich details first: sleep stages/score/times and individual workout sessions with pace, calories, heart rate, cadence, VO2 max, and GPX references when present. Build detailed analytical tables before expanding UI or AI.
@@ -103,8 +104,8 @@ Local Mi Fitness export summary:
 5. Re-run the private export import and verify counts manually before trusting analysis.
 6. Keep the useful long-term step/km stats because Mi Fitness does not expose them well.
 7. Only after detailed import is verified, build deterministic analysis context and correlation confidence rules. Start with monthly sleep phase averages, monthly sport trends, high-activity versus low-activity sleep comparison, running/walking cardio efficiency, and calorie efficiency.
-8. Then redesign the UI around insights, with domain tabs as drill-down rather than the product core.
-9. Add AI only after deterministic analytics can produce a compact `AiHealthSummary`.
+8. Redesign UI around a single insight feed first: data reality, personal baselines, tested hypotheses, and only then domain drill-down.
+9. Add AI only after deterministic analytics can produce a compact `AiHealthSummary`; AI explains and prioritizes, it does not invent conclusions from weak data.
 
 ## Work Log
 
@@ -138,6 +139,7 @@ Local Mi Fitness export summary:
 | 2026-06-05 | `vitrace/mvp-foundation` | Added deterministic `sport_efficiency/current_snapshot` comparing closed walking/running months for distance, sessions, HR, pace, kcal/km, kcal/min, and confidence; documented chart plan and retained only recent unpinned current snapshots. | `:app:assembleDebug` passed; APK installed; phone DB verified current `sleep_activity` and `sport_efficiency`; UI verified Sport/Analiza shows walking 2026-05 vs 2026-04 with low-confidence volume warning and running as insufficient. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Started Apple Watch/Fitness-inspired visual direction for analytical screens: dark high-contrast insight card, bright HR/pace colors, compact metric chips, and a first Canvas line chart in Sport/Analiza. Shortened the analysis steps list to 6 months so the insight is no longer buried. | `:app:assembleDebug` passed; APK installed; UI dump and screenshot verified the sport card, chart legend 2025-10 to 2026-05, no mojibake in app/docs, and DB check confirmed 2026-06 is excluded from sport-efficiency conclusions. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Stopped UI expansion after reviewing real data and researching better wearable insight patterns. Added reset doc: strongest data is yearly/monthly activity and walking sessions; sleep is medium; running, weight, SpO2, body composition are weak for claims. | Manual SQLite review: 1,073 activity days, 133 sleep nights, 303 workouts, 273 walking sessions, 7 running sessions, 3 weight records. Web review: Apple/Oura/Garmin emphasize personal baselines, readiness/recovery, training load, typical ranges, and confidence. |
+| 2026-06-05 | `vitrace/mvp-foundation` | Removed visible app tabs from the main Android screen and replaced the start route with a data-reality screen: what we know, what not to fake, sensible hypotheses, and the next InsightEngine module. | `:app:assembleDebug` passed; APK installed on phone; UI verification was blocked because the phone was locked at the PIN screen during ADB dump/screenshot. |
 
 ## Update Protocol
 
