@@ -353,6 +353,24 @@ interface DailySummaryDao {
     @Query(
         """
         SELECT
+            date AS date,
+            totalSleepMinutes AS totalSleepMinutes,
+            deepSleepMinutes AS deepSleepMinutes,
+            lightSleepMinutes AS lightSleepMinutes,
+            remSleepMinutes AS remSleepMinutes,
+            awakeMinutes AS awakeMinutes,
+            sleepScore AS sleepScore
+        FROM sleep_details
+        WHERE date < :beforeDate
+          AND totalSleepMinutes > 0
+        ORDER BY date DESC
+        """
+    )
+    suspend fun sleepWindowRowsBefore(beforeDate: String): List<SleepWindowRow>
+
+    @Query(
+        """
+        SELECT
             s.date AS date,
             a.steps AS steps,
             a.distanceMeters AS distanceMeters,

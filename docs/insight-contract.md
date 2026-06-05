@@ -79,6 +79,7 @@ Allowed deterministic tests now:
 - data coverage reality
 - yearly/monthly steps and estimated kilometers
 - monthly sleep baseline with sleep stages
+- sleep debt window versus personal baseline
 - same-night steps/activity versus sleep
 - poor sleep versus next-day activity and heart
 - training day versus non-training day sleep
@@ -91,6 +92,7 @@ Current `tested_insight` scopes:
 - `data_coverage_reality`
 - `long_term_steps_km`
 - `sleep_monthly_baseline`
+- `sleep_debt_window`
 - `activity_sleep_same_night`
 - `sleep_next_day_activity`
 - `training_day_sleep`

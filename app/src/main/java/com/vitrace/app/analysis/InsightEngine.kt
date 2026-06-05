@@ -6,6 +6,7 @@ import com.vitrace.app.data.HeartContextRow
 import com.vitrace.app.data.MonthlySleepPhaseAggregate
 import com.vitrace.app.data.SleepActivityFeatureRow
 import com.vitrace.app.data.SleepNextDayActivityRow
+import com.vitrace.app.data.SleepWindowRow
 import com.vitrace.app.data.TrainingSleepAggregate
 import com.vitrace.app.data.UserProfileEntity
 import com.vitrace.app.data.VitaTraceDatabase
@@ -80,6 +81,7 @@ object InsightEngine {
         val yearlyActivity = dao.yearlyActivityBefore(todayText)
         val bestActivityMonth = dao.bestActivityMonthBefore(todayText)
         val monthlySleep = dao.monthlySleepPhasesBefore(beforeDate = todayText, limit = 8)
+        val sleepWindowRows = dao.sleepWindowRowsBefore(todayText)
         val heartContextRows = dao.heartContextRowsBefore(todayText)
         val currentWalkingBands = dao.walkingBandsBetween(
             startDate = currentStart.toString(),
@@ -100,6 +102,7 @@ object InsightEngine {
                 profile = profile,
             ),
             buildMonthlySleepBaselineInsight(monthlySleep),
+            buildSleepDebtInsight(sleepWindowRows),
             buildSameNightSleepInsight(sleepActivityRows),
             buildNextDayActivityInsight(nextDayRows),
             buildTrainingSleepInsight(trainingSleepRows),
@@ -227,6 +230,56 @@ object InsightEngine {
                 "dzisiejszy czesciowy sen nie jest uzyty w trendzie",
             ),
             nextStep = "dodac wykres stacked bar miesiacami i test sleep debt 7/14/30 dni",
+        )
+    }
+
+    private fun buildSleepDebtInsight(
+        rowsDescending: List<SleepWindowRow>,
+    ): TestedInsight {
+        val newest30 = rowsDescending.take(30)
+        val newest14 = rowsDescending.take(14)
+        val newest7 = rowsDescending.take(7)
+        val baseline = rowsDescending.drop(30).take(90)
+        val baselineTotal = baseline.map { row -> row.totalSleepMinutes }.averageOrNull()
+        val baselineRem = baseline.mapNotNull { row -> row.remSleepMinutes }.averageOrNull()
+        val baselineDeep = baseline.mapNotNull { row -> row.deepSleepMinutes }.averageOrNull()
+        val delta7 = newest7.map { row -> row.totalSleepMinutes }.averageOrNull().minusNullable(baselineTotal)
+        val delta14 = newest14.map { row -> row.totalSleepMinutes }.averageOrNull().minusNullable(baselineTotal)
+        val delta30 = newest30.map { row -> row.totalSleepMinutes }.averageOrNull().minusNullable(baselineTotal)
+        val remDelta30 = newest30.mapNotNull { row -> row.remSleepMinutes }.averageOrNull().minusNullable(baselineRem)
+        val deepDelta30 = newest30.mapNotNull { row -> row.deepSleepMinutes }.averageOrNull().minusNullable(baselineDeep)
+
+        return TestedInsight(
+            id = "sleep_debt_window",
+            domain = "Sen",
+            title = "Czy ostatnie noce sa ponizej Twojej normy?",
+            answer = when {
+                newest30.size < 14 || baseline.size < 30 -> "Mamy za malo zarejestrowanych nocy, zeby policzyc sensowny sleep debt wzgledem Twojej normy."
+                delta7 != null && delta7 <= -45.0 ->
+                    "Ostatnie 7 zarejestrowanych nocy jest wyraznie krotsze niz Twoj wczesniejszy baseline. To moze byc sygnal dlugu snu."
+                delta30 != null && delta30 <= -30.0 ->
+                    "Ostatnie 30 zarejestrowanych nocy jest krotsze niz Twoj baseline. Warto obserwowac, czy to trend, czy tylko okres z gorszym snem."
+                abs(delta30 ?: 0.0) < 20.0 ->
+                    "Ostatnie 30 zarejestrowanych nocy wyglada podobnie do Twojej wczesniejszej normy dlugosci snu."
+                else -> "Sleep debt window jest policzony, ale sygnal nie jest jednoznaczny bez regularniejszego pokrycia nocy."
+            },
+            evidence = listOf(
+                "ostatnie 7 nocy: ${newest7.map { row -> row.totalSleepMinutes }.averageOrNull().formatMinutes()} (${delta7.formatSigned0()} min vs baseline)",
+                "ostatnie 14 nocy: ${newest14.map { row -> row.totalSleepMinutes }.averageOrNull().formatMinutes()} (${delta14.formatSigned0()} min vs baseline)",
+                "ostatnie 30 nocy: ${newest30.map { row -> row.totalSleepMinutes }.averageOrNull().formatMinutes()} (${delta30.formatSigned0()} min vs baseline)",
+                "baseline: ${baseline.size} nocy, ${baselineTotal.formatMinutes()}",
+                "REM 30 nocy vs baseline: ${remDelta30.formatSigned0()} min",
+                "gleboki 30 nocy vs baseline: ${deepDelta30.formatSigned0()} min",
+            ),
+            dateRange = dateRangeForSleepWindowRows(newest30),
+            sampleSize = newest30.size + baseline.size,
+            confidence = confidenceForGroups(newest30.size, baseline.size),
+            limitations = listOf(
+                "to sa ostatnie zarejestrowane noce, nie zawsze ciagly kalendarz",
+                "fazy snu z zegarka sa estymacja",
+                "dzisiejszy czesciowy sen nie jest uzyty w trendzie",
+            ),
+            nextStep = "dodac widok 7/14/30 nocy z kreska Twojego baseline i oznaczeniem brakujacych nocy",
         )
     }
 
@@ -626,6 +679,13 @@ private fun dateRangeForHeartRows(rows: List<HeartContextRow>): String {
         return "brak danych"
     }
     return "${rows.first().date} - ${rows.last().date}"
+}
+
+private fun dateRangeForSleepWindowRows(rowsDescending: List<SleepWindowRow>): String {
+    if (rowsDescending.isEmpty()) {
+        return "brak danych"
+    }
+    return "${rowsDescending.last().date} - ${rowsDescending.first().date}"
 }
 
 private fun <T : Number> List<T>.averageOrNull(): Double? {

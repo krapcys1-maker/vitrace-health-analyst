@@ -37,6 +37,8 @@ class OfflineSignalReportCliTest(unittest.TestCase):
         self.assertIn("Closed-day rule: rows before `2026-06-05`", result.stdout)
         self.assertIn("| 2026 | 2 | 20,000 | 16.0 | 15.0 |", result.stdout)
         self.assertNotIn("1,019,999", result.stdout)
+        self.assertIn("Sleep Debt Window", result.stdout)
+        self.assertIn("Latest measured night: 2026-06-02", result.stdout)
         self.assertIn("Heart Context", result.stdout)
         self.assertNotIn("999 bpm", result.stdout)
         self.assertIn("Walking Workout Baselines", result.stdout)

@@ -63,6 +63,7 @@ def build_report(
     lines.extend(data_coverage_section(con, cutoff_date))
     lines.extend(activity_section(con, cutoff_date, steps_per_km))
     lines.extend(sleep_section(con, cutoff_date))
+    lines.extend(sleep_debt_section(con, cutoff_date))
     lines.extend(sleep_activity_section(con, cutoff_date))
     lines.extend(heart_context_section(con, cutoff_date))
     lines.extend(walking_section(con, cutoff_date))
@@ -256,6 +257,56 @@ def sleep_activity_section(con: sqlite3.Connection, cutoff_date: str) -> list[st
     return lines
 
 
+def sleep_debt_section(con: sqlite3.Connection, cutoff_date: str) -> list[str]:
+    rows = list(
+        con.execute(
+            """
+            SELECT
+                date,
+                totalSleepMinutes,
+                remSleepMinutes,
+                deepSleepMinutes,
+                lightSleepMinutes,
+                awakeMinutes,
+                sleepScore
+            FROM sleep_details
+            WHERE date < ? AND totalSleepMinutes > 0
+            ORDER BY date DESC
+            """,
+            (cutoff_date,),
+        )
+    )
+    newest7 = rows[:7]
+    newest14 = rows[:14]
+    newest30 = rows[:30]
+    baseline = rows[30:120]
+    baseline_total = average(baseline, "totalSleepMinutes")
+    baseline_rem = average(baseline, "remSleepMinutes")
+    baseline_deep = average(baseline, "deepSleepMinutes")
+    total_7 = average(newest7, "totalSleepMinutes")
+    total_14 = average(newest14, "totalSleepMinutes")
+    total_30 = average(newest30, "totalSleepMinutes")
+    rem_30 = average(newest30, "remSleepMinutes")
+    deep_30 = average(newest30, "deepSleepMinutes")
+
+    lines = [
+        "## Sleep Debt Window",
+        "",
+        f"- Latest measured night: {rows[0]['date'] if rows else 'brak'}",
+        f"- Baseline nights: {len(baseline)}",
+        "",
+        "| Window | Nights | Total h | Delta vs baseline | REM delta | Deep delta |",
+        "|---|---:|---:|---:|---:|---:|",
+        sleep_window_row("last 7 measured", newest7, baseline_total, baseline_rem, baseline_deep),
+        sleep_window_row("last 14 measured", newest14, baseline_total, baseline_rem, baseline_deep),
+        sleep_window_row("last 30 measured", newest30, baseline_total, baseline_rem, baseline_deep),
+        "",
+        "Interpretation: this uses the latest measured nights, not a guaranteed continuous calendar window.",
+        "",
+    ]
+    return lines
+
+
 def walking_section(con: sqlite3.Connection, cutoff_date: str) -> list[str]:
     rows = list(
         con.execute(
@@ -403,9 +454,33 @@ def sleep_group_row(label: str, rows: list[sqlite3.Row]) -> str:
     )
 
 
+def sleep_window_row(
+    label: str,
+    rows: list[sqlite3.Row],
+    baseline_total: float | None,
+    baseline_rem: float | None,
+    baseline_deep: float | None,
+) -> str:
+    total = average(rows, "totalSleepMinutes")
+    rem = average(rows, "remSleepMinutes")
+    deep = average(rows, "deepSleepMinutes")
+    return (
+        f"| {label} | {len(rows)} | {minutes_to_hours(total):.2f} | "
+        f"{fmt_signed_minutes(delta(total, baseline_total))} | "
+        f"{fmt_signed_minutes(delta(rem, baseline_rem))} | "
+        f"{fmt_signed_minutes(delta(deep, baseline_deep))} |"
+    )
+
+
 def average(rows: list[sqlite3.Row], key: str) -> float | None:
     values = [float(row[key]) for row in rows if row[key] is not None]
     return sum(values) / len(values) if values else None
+
+
+def delta(current: float | None, baseline: float | None) -> float | None:
+    if current is None or baseline is None:
+        return None
+    return current - baseline
 
 
 def average_values(values: list[float]) -> float | None:
@@ -450,6 +525,10 @@ def correlation(rows: Iterable[sqlite3.Row], x_key: str, y_key: str) -> float | 
 
 def fmt_corr(value: float | None) -> str:
     return "brak" if value is None else f"{value:+.2f}"
+
+
+def fmt_signed_minutes(value: float | None) -> str:
+    return "brak" if value is None else f"{value:+.0f} min"
 
 
 def fmt0(value: int | float | None) -> str:

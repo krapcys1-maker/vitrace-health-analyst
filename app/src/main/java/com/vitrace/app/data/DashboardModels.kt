@@ -63,6 +63,16 @@ data class MonthlySleepPhaseAggregate(
     val avgSleepScore: Double?,
 )
 
+data class SleepWindowRow(
+    val date: String,
+    val totalSleepMinutes: Long,
+    val deepSleepMinutes: Long?,
+    val lightSleepMinutes: Long?,
+    val remSleepMinutes: Long?,
+    val awakeMinutes: Long?,
+    val sleepScore: Int?,
+)
+
 data class SleepActivityFeatureRow(
     val date: String,
     val steps: Long,
