@@ -20,6 +20,8 @@ and durationSeconds between 600 and 14400
 and avgPaceSecondsPerKm between 480 and 1500
 """.strip()
 
+LONG_WALK_SLEEP_MIN_DISTANCE_KM = 8.0
+
 
 @dataclass(frozen=True)
 class ActivityMonth:

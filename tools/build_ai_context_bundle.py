@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Any
 
 from analysis_rules import (
+    CREDIBLE_WALKING_FILTER_SQL,
     FITNESS_WALKING_FILTER_SQL,
+    LONG_WALK_SLEEP_MIN_DISTANCE_KM,
     ActivityMonth,
     classify_activity_months,
 )
@@ -176,6 +178,7 @@ def deterministic_engine_facts(
     return {
         "activityOverTime": activity_over_time_facts(con, generated_for_date, steps_per_km),
         "walkingFitness": walking_fitness_facts(con, generated_for_date),
+        "sleepAfterLongWalks": sleep_after_long_walks_facts(con, generated_for_date),
     }
 
 
@@ -334,6 +337,82 @@ def numeric_delta(current: object, previous: object) -> float | None:
     if current is None or previous is None:
         return None
     return round(float(current) - float(previous), 1)
+
+
+def sleep_after_long_walks_facts(con: sqlite3.Connection, generated_for_date: str) -> dict[str, Any]:
+    try:
+        rows = list(
+            con.execute(
+                f"""
+                with walking_days as (
+                  select date as activityDate,
+                         sum(distanceMeters) / 1000.0 as walkingKm,
+                         count(*) as walkingSessions
+                  from workout_sessions
+                  where date < ? and {CREDIBLE_WALKING_FILTER_SQL}
+                  group by date
+                )
+                select s.date as sleepDate,
+                       coalesce(w.walkingKm, 0.0) as prevWalkingKm,
+                       coalesce(w.walkingSessions, 0) as prevWalkingSessions,
+                       s.totalSleepMinutes as totalSleepMinutes,
+                       s.remSleepMinutes as remSleepMinutes,
+                       s.deepSleepMinutes as deepSleepMinutes,
+                       s.lightSleepMinutes as lightSleepMinutes,
+                       s.sleepScore as sleepScore
+                from sleep_details s
+                left join walking_days w on s.date = date(w.activityDate, '+1 day')
+                where s.date < ? and s.totalSleepMinutes > 0
+                """,
+                (generated_for_date, generated_for_date),
+            )
+        )
+    except sqlite3.OperationalError:
+        return {"available": False, "reason": "sleep or workout tables unavailable"}
+
+    long_walk_rows = [
+        row for row in rows
+        if float(row["prevWalkingKm"] or 0) >= LONG_WALK_SLEEP_MIN_DISTANCE_KM
+    ]
+    normal_rows = [
+        row for row in rows
+        if float(row["prevWalkingKm"] or 0) < LONG_WALK_SLEEP_MIN_DISTANCE_KM
+    ]
+    long_walk = sleep_walk_group(long_walk_rows)
+    normal = sleep_walk_group(normal_rows)
+    return {
+        "available": bool(rows),
+        "closedDayRule": f"uses sleep dates before {generated_for_date}",
+        "thresholdKm": LONG_WALK_SLEEP_MIN_DISTANCE_KM,
+        "interpretationGuard": "hypothesis only; next-night comparison does not prove causality",
+        "longWalkSleep": long_walk,
+        "normalSleep": normal,
+        "delta": {
+            "totalSleepMinutes": numeric_delta(long_walk.get("totalSleepMinutes"), normal.get("totalSleepMinutes")),
+            "remSleepMinutes": numeric_delta(long_walk.get("remSleepMinutes"), normal.get("remSleepMinutes")),
+            "deepSleepMinutes": numeric_delta(long_walk.get("deepSleepMinutes"), normal.get("deepSleepMinutes")),
+            "sleepScore": numeric_delta(long_walk.get("sleepScore"), normal.get("sleepScore")),
+        },
+    }
+
+
+def sleep_walk_group(rows: list[sqlite3.Row]) -> dict[str, Any]:
+    return {
+        "days": len(rows),
+        "avgPreviousWalkingKm": rounded_average(rows, "prevWalkingKm"),
+        "totalSleepMinutes": rounded_average(rows, "totalSleepMinutes"),
+        "remSleepMinutes": rounded_average(rows, "remSleepMinutes"),
+        "deepSleepMinutes": rounded_average(rows, "deepSleepMinutes"),
+        "lightSleepMinutes": rounded_average(rows, "lightSleepMinutes"),
+        "sleepScore": rounded_average(rows, "sleepScore"),
+    }
+
+
+def rounded_average(rows: list[sqlite3.Row], key: str) -> float | None:
+    values = [float(row[key]) for row in rows if row[key] is not None]
+    if not values:
+        return None
+    return round(sum(values) / len(values), 1)
 
 
 def research_rules() -> dict[str, list[str]]:

@@ -49,7 +49,7 @@ class BuildAiContextBundleCliTest(unittest.TestCase):
         self.assertFalse(bundle["source"]["routeDataIncluded"])
         self.assertEqual(bundle["profile"]["ageYears"], 40)
         self.assertEqual(bundle["dataCoverage"]["activityDays"], 102)
-        self.assertEqual(bundle["dataCoverage"]["sleepDetailNights"], 1)
+        self.assertEqual(bundle["dataCoverage"]["sleepDetailNights"], 2)
         self.assertEqual(bundle["deterministicInsights"][0]["id"], "long_term_steps_km")
         self.assertEqual(bundle["engineFacts"]["activityOverTime"]["stepsPerKm"], 1250)
         self.assertEqual(bundle["engineFacts"]["activityOverTime"]["bestRecentMonth"]["period"], "2026-04")
@@ -57,6 +57,11 @@ class BuildAiContextBundleCliTest(unittest.TestCase):
         self.assertNotIn("999999", json.dumps(bundle["engineFacts"], ensure_ascii=True))
         self.assertEqual(bundle["engineFacts"]["walkingFitness"]["years"][0]["period"], "2026")
         self.assertEqual(bundle["engineFacts"]["walkingFitness"]["years"][0]["sessions"], 1)
+        sleep_after_walks = bundle["engineFacts"]["sleepAfterLongWalks"]
+        self.assertEqual(sleep_after_walks["thresholdKm"], 8.0)
+        self.assertEqual(sleep_after_walks["longWalkSleep"]["days"], 1)
+        self.assertEqual(sleep_after_walks["normalSleep"]["days"], 1)
+        self.assertEqual(sleep_after_walks["delta"]["totalSleepMinutes"], -30.0)
         self.assertIn("2026-06-05 as partial", bundle["source"]["closedDayRule"])
         self.assertIn("Do not diagnose", prompt)
         self.assertIn("Do not mention sync", prompt)
@@ -225,7 +230,7 @@ def create_fixture_db(db_path: Path) -> None:
             """,
             activity_rows,
         )
-        con.execute(
+        con.executemany(
             """
             INSERT INTO sleep_details
             (
@@ -234,9 +239,13 @@ def create_fixture_db(db_path: Path) -> None:
                 segmentCount, source, rawSourceFile, rawSourceKey, rawTimestampEpochMs,
                 rawPayloadJson, syncedAtEpochMs
             )
-            VALUES ('2026-06-01', NULL, NULL, 430, 60, 280, 80, 10, 1, 75,
+            VALUES (?, NULL, NULL, ?, ?, ?, ?, 10, 1, ?,
                     1, 'fixture', 'fixture.csv', 'sleep', NULL, '{"private":true}', 1)
-            """
+            """,
+            [
+                ("2026-06-01", 430, 60, 280, 80, 75),
+                ("2026-06-02", 400, 50, 270, 70, 68),
+            ],
         )
         con.execute(
             """
@@ -267,7 +276,7 @@ def create_fixture_db(db_path: Path) -> None:
             )
             VALUES
             ('walk-1', '2026-06-01', 'walking', 'Walking', NULL, NULL,
-             NULL, 3600, 5000.0, 220.0, NULL, 6500, 120.0, 90,
+             NULL, 5400, 9000.0, 420.0, NULL, 11000, 120.0, 90,
              150, 720, NULL, NULL, 110.0, NULL, NULL,
              NULL, 38.5, 'private-route.gpx', 'fixture', 'fixture.csv', NULL, '{"private":true}', 1)
             """

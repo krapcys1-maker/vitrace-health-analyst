@@ -12,6 +12,7 @@ from pathlib import Path
 from analysis_rules import (
     CREDIBLE_WALKING_FILTER_SQL,
     FITNESS_WALKING_FILTER_SQL,
+    LONG_WALK_SLEEP_MIN_DISTANCE_KM,
     ActivityMonth,
     ActivityMonthSignal,
     classify_activity_months,
@@ -56,6 +57,7 @@ def build_report(con: sqlite3.Connection, db_path: Path, cutoff_date: str) -> st
     running = running_summary(con, cutoff_date)
     intensity = exercise_intensity_summary(con, cutoff_date)
     sleep_activity = sleep_activity_tests(con, cutoff_date)
+    long_walk_sleep = sleep_after_long_walks(con, cutoff_date)
     sleep_windows = sleep_debt_windows(con, cutoff_date)
     heart = heart_context(con, cutoff_date)
     coverage = data_coverage(con, cutoff_date)
@@ -72,12 +74,12 @@ def build_report(con: sqlite3.Connection, db_path: Path, cutoff_date: str) -> st
         "",
     ]
 
-    lines.extend(executive_findings(activity_years, activity_months, walking_years, fitness_walking_years, running, sleep_activity, sleep_windows, heart, steps_per_km))
+    lines.extend(executive_findings(activity_years, activity_months, walking_years, fitness_walking_years, running, sleep_activity, long_walk_sleep, sleep_windows, heart, steps_per_km))
     lines.extend(coverage_section(coverage))
     lines.extend(activity_section(activity_years, activity_months, steps_per_km))
     lines.extend(walking_section(walking_years, fitness_walking_years, intensity))
     lines.extend(running_section(running))
-    lines.extend(sleep_section(sleep_months, sleep_windows, sleep_activity))
+    lines.extend(sleep_section(sleep_months, sleep_windows, sleep_activity, long_walk_sleep))
     lines.extend(heart_section(heart))
     lines.extend(product_section())
     lines.extend(reference_section())
@@ -92,6 +94,7 @@ def executive_findings(
     fitness_walking_years: list[sqlite3.Row],
     running: dict[str, object],
     sleep_activity: dict[str, object],
+    long_walk_sleep: dict[str, object],
     sleep_windows: dict[str, object],
     heart: dict[str, object],
     steps_per_km: int,
@@ -183,9 +186,19 @@ def executive_findings(
             "hipoteza do monitorowania live, nie diagnoza."
         )
 
+    long_walk = long_walk_sleep["long_walk"]
+    normal_walk = long_walk_sleep["normal"]
+    if long_walk and normal_walk:
+        findings.append(
+            f"10. Po dlugich marszach >= {LONG_WALK_SLEEP_MIN_DISTANCE_KM:.0f} km nastepna noc w danych jest krotsza: "
+            f"{minutes_h(long_walk['total'])} vs {minutes_h(normal_walk['total'])}, score "
+            f"{fmt1(long_walk['score'])} vs {fmt1(normal_walk['score'])}. Probka dlugich marszow to "
+            f"{long_walk['days']} nocy, wiec to hipoteza regeneracji, nie pewny wniosek."
+        )
+
     if running["old"] and running["recent"]:
         findings.append(
-            f"10. Bieganie jest za male na trend, ale jako sygnal startowy wyglada ciekawie: 2026 ma srednie tempo "
+            f"11. Bieganie jest za male na trend, ale jako sygnal startowy wyglada ciekawie: 2026 ma srednie tempo "
             f"{pace(running['recent']['pace'])} przy {fmt1(running['recent']['hr'])} bpm, a stare biegi 2023 mialy "
             f"{pace(running['old']['pace'])} przy {fmt1(running['old']['hr'])} bpm. To trzeba zbierac dalej."
         )
@@ -345,7 +358,12 @@ def running_section(running: dict[str, object]) -> list[str]:
     return lines
 
 
-def sleep_section(months: list[sqlite3.Row], windows: dict[str, object], sleep_activity: dict[str, object]) -> list[str]:
+def sleep_section(
+    months: list[sqlite3.Row],
+    windows: dict[str, object],
+    sleep_activity: dict[str, object],
+    long_walk_sleep: dict[str, object],
+) -> list[str]:
     lines = [
         "## Sen: baseline jest, ale korelacje trzeba traktowac uczciwie",
         "",
@@ -385,6 +403,15 @@ def sleep_section(months: list[sqlite3.Row], windows: dict[str, object], sleep_a
         correlation_row("Dzien przed snem", previous),
         "",
         "Wniosek: aplikacja nie powinna mowic `ruszales sie wiecej, wiec lepiej spales`. U Ciebie na tych danych zaleznosc jest slaba albo lekko odwrotna dla score/REM.",
+        "",
+        f"Test regeneracji po dlugim marszu >= {LONG_WALK_SLEEP_MIN_DISTANCE_KM:.0f} km:",
+        "",
+        "| Grupa | Noce | Marsz poprzedniego dnia | Sen | REM | Gleboki | Score |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+        sleep_after_walk_row("po dlugim marszu", long_walk_sleep["long_walk"]),
+        sleep_after_walk_row("pozostale noce", long_walk_sleep["normal"]),
+        "",
+        "Wniosek: to test nastepnej nocy po marszu, nie dowod przyczyny. Przy malej probce traktujemy go jako trop regeneracji.",
         "",
     ])
     return lines
@@ -659,6 +686,42 @@ def sleep_activity_test(con: sqlite3.Connection, cutoff_date: str, join_conditio
     }
 
 
+def sleep_after_long_walks(con: sqlite3.Connection, cutoff_date: str) -> dict[str, object]:
+    rows = list(con.execute(
+        f"""
+        with walking_days as (
+          select date as activityDate,
+                 sum(distanceMeters) / 1000.0 as walkingKm,
+                 count(*) as walkingSessions
+          from workout_sessions
+          where date < ?
+            and {CREDIBLE_WALKING_FILTER_SQL}
+          group by date
+        )
+        select s.date as sleepDate,
+               coalesce(w.walkingKm, 0.0) as prevWalkingKm,
+               coalesce(w.walkingSessions, 0) as prevWalkingSessions,
+               s.totalSleepMinutes as total,
+               s.remSleepMinutes as rem,
+               s.deepSleepMinutes as deep,
+               s.lightSleepMinutes as light,
+               s.sleepScore as score
+        from sleep_details s
+        left join walking_days w on s.date = date(w.activityDate, '+1 day')
+        where s.date < ? and s.totalSleepMinutes > 0
+        """,
+        (cutoff_date, cutoff_date),
+    ))
+    long_walk_rows = [row for row in rows if float(row["prevWalkingKm"] or 0) >= LONG_WALK_SLEEP_MIN_DISTANCE_KM]
+    normal_rows = [row for row in rows if float(row["prevWalkingKm"] or 0) < LONG_WALK_SLEEP_MIN_DISTANCE_KM]
+    return {
+        "threshold_km": LONG_WALK_SLEEP_MIN_DISTANCE_KM,
+        "pairs": len(rows),
+        "long_walk": aggregate_sleep_after_walk_group(long_walk_rows),
+        "normal": aggregate_sleep_after_walk_group(normal_rows),
+    }
+
+
 def heart_context(con: sqlite3.Connection, cutoff_date: str) -> dict[str, object]:
     rows = list(con.execute(
         """
@@ -731,6 +794,18 @@ def aggregate_sleep_group(rows: list[sqlite3.Row]) -> dict[str, float]:
         "total": average(rows, "total"),
         "rem": average(rows, "rem"),
         "deep": average(rows, "deep"),
+        "score": average(rows, "score"),
+    }
+
+
+def aggregate_sleep_after_walk_group(rows: list[sqlite3.Row]) -> dict[str, float]:
+    return {
+        "days": len(rows),
+        "prev_walking_km": average(rows, "prevWalkingKm"),
+        "total": average(rows, "total"),
+        "rem": average(rows, "rem"),
+        "deep": average(rows, "deep"),
+        "light": average(rows, "light"),
         "score": average(rows, "score"),
     }
 
@@ -824,6 +899,15 @@ def correlation_row(label: str, row: dict[str, object]) -> str:
         f"| {label} | {row['pairs']} | {fmt_corr(row['corr_total'])} | "
         f"{fmt_corr(row['corr_rem'])} | {fmt_corr(row['corr_deep'])} | "
         f"{fmt_corr(row['corr_score'])} | {conclusion} |"
+    )
+
+
+def sleep_after_walk_row(label: str, row: dict[str, object] | None) -> str:
+    if not row:
+        return f"| {label} | 0 | brak | brak | brak | brak | brak |"
+    return (
+        f"| {label} | {row['days']} | {fmt1(row['prev_walking_km'])} km | "
+        f"{minutes_h(row['total'])} | {fmt1(row['rem'])} | {fmt1(row['deep'])} | {fmt1(row['score'])} |"
     )
 
 

@@ -104,6 +104,7 @@ Outputs:
 - total sleep first
 - REM/deep/light as wearable estimates
 - activity-to-sleep and sleep-to-next-day tests
+- next-night sleep after long walks versus other measured nights
 
 AI role:
 
