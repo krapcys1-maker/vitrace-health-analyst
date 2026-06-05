@@ -32,6 +32,31 @@ class AuditInsightsCliTest(unittest.TestCase):
         self.assertIn("OK: insight snapshots are structurally valid.", result.stdout)
         self.assertIn("paired closed days: 3", result.stdout)
 
+    def test_new_known_engine_scopes_pass(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
+            db_path = Path(tmpdir) / "vitrace-test.db"
+            create_fixture_db(
+                db_path,
+                extra_scopes=["long_term_steps_km", "sleep_monthly_baseline"],
+            )
+
+            result = run_audit(db_path)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("long_term_steps_km", result.stdout)
+        self.assertIn("sleep_monthly_baseline", result.stdout)
+
+    def test_unknown_engine_scope_fails(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
+            db_path = Path(tmpdir) / "vitrace-test.db"
+            create_fixture_db(db_path, extra_scopes=["made_up_scope"])
+
+            result = run_audit(db_path)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("unexpected current tested insights", result.stdout)
+        self.assertIn("made_up_scope", result.stdout)
+
     def test_missing_required_insight_fails(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             db_path = Path(tmpdir) / "vitrace-test.db"
@@ -68,11 +93,13 @@ def create_fixture_db(
     db_path: Path,
     omitted_scope: str | None = None,
     broken_scope: str | None = None,
+    extra_scopes: list[str] | None = None,
 ) -> None:
     with sqlite3.connect(db_path) as con:
         create_schema(con)
         insert_metric_rows(con)
-        for index, scope in enumerate(EXPECTED_SCOPES, start=1):
+        scopes = EXPECTED_SCOPES + (extra_scopes or [])
+        for index, scope in enumerate(scopes, start=1):
             if scope == omitted_scope:
                 continue
             insert_insight_row(

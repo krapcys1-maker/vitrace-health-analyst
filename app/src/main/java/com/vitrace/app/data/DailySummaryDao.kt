@@ -32,6 +32,15 @@ interface DailySummaryDao {
     )
     suspend fun activityDays(): Int
 
+    @Query(
+        """
+        SELECT COUNT(*) FROM daily_activity_summaries
+        WHERE date < :beforeDate
+          AND (steps > 0 OR distanceMeters > 0 OR activeCaloriesKcal > 0)
+        """
+    )
+    suspend fun activityDaysBefore(beforeDate: String): Int
+
     @Query("SELECT COUNT(*) FROM daily_heart_summaries WHERE sampleCount > 0")
     suspend fun heartDays(): Int
 
@@ -133,6 +142,23 @@ interface DailySummaryDao {
     @Query(
         """
         SELECT
+            substr(date, 1, 4) AS period,
+            COALESCE(SUM(steps), 0) AS steps,
+            COALESCE(SUM(distanceMeters), 0) AS distanceMeters,
+            COALESCE(SUM(activeCaloriesKcal), 0) AS activeCaloriesKcal,
+            COUNT(CASE WHEN steps > 0 OR distanceMeters > 0 OR activeCaloriesKcal > 0 THEN 1 END) AS daysWithActivity
+        FROM daily_activity_summaries
+        WHERE date < :beforeDate
+          AND (steps > 0 OR distanceMeters > 0 OR activeCaloriesKcal > 0)
+        GROUP BY substr(date, 1, 4)
+        ORDER BY period DESC
+        """
+    )
+    suspend fun yearlyActivityBefore(beforeDate: String): List<ActivityPeriodAggregate>
+
+    @Query(
+        """
+        SELECT
             substr(date, 1, 7) AS period,
             COALESCE(SUM(steps), 0) AS steps,
             COALESCE(SUM(distanceMeters), 0) AS distanceMeters,
@@ -146,6 +172,24 @@ interface DailySummaryDao {
         """
     )
     suspend fun bestActivityMonth(): ActivityPeriodAggregate?
+
+    @Query(
+        """
+        SELECT
+            substr(date, 1, 7) AS period,
+            COALESCE(SUM(steps), 0) AS steps,
+            COALESCE(SUM(distanceMeters), 0) AS distanceMeters,
+            COALESCE(SUM(activeCaloriesKcal), 0) AS activeCaloriesKcal,
+            COUNT(CASE WHEN steps > 0 OR distanceMeters > 0 OR activeCaloriesKcal > 0 THEN 1 END) AS daysWithActivity
+        FROM daily_activity_summaries
+        WHERE date < :beforeDate
+          AND (steps > 0 OR distanceMeters > 0 OR activeCaloriesKcal > 0)
+        GROUP BY substr(date, 1, 7)
+        ORDER BY steps DESC
+        LIMIT 1
+        """
+    )
+    suspend fun bestActivityMonthBefore(beforeDate: String): ActivityPeriodAggregate?
 
     @Query(
         """
@@ -284,6 +328,31 @@ interface DailySummaryDao {
     @Query(
         """
         SELECT
+            substr(date, 1, 7) AS period,
+            COUNT(*) AS sleepDays,
+            AVG(totalSleepMinutes) AS avgTotalSleepMinutes,
+            AVG(deepSleepMinutes) AS avgDeepSleepMinutes,
+            AVG(lightSleepMinutes) AS avgLightSleepMinutes,
+            AVG(remSleepMinutes) AS avgRemSleepMinutes,
+            AVG(awakeMinutes) AS avgAwakeMinutes,
+            AVG(sleepScore) AS avgSleepScore
+        FROM sleep_details
+        WHERE date < :beforeDate
+          AND totalSleepMinutes > 0
+        GROUP BY substr(date, 1, 7)
+        HAVING COUNT(*) >= 3
+        ORDER BY period DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun monthlySleepPhasesBefore(
+        beforeDate: String,
+        limit: Int,
+    ): List<MonthlySleepPhaseAggregate>
+
+    @Query(
+        """
+        SELECT
             s.date AS date,
             a.steps AS steps,
             a.distanceMeters AS distanceMeters,
@@ -376,6 +445,30 @@ interface DailySummaryDao {
     @Query(
         """
         SELECT
+            CASE
+                WHEN EXISTS (
+                    SELECT 1 FROM workout_sessions w
+                    WHERE w.date = s.date
+                      AND w.date < :beforeDate
+                ) THEN 'training'
+                ELSE 'non_training'
+            END AS groupName,
+            COUNT(*) AS nights,
+            AVG(s.totalSleepMinutes) AS avgTotalSleepMinutes,
+            AVG(s.deepSleepMinutes) AS avgDeepSleepMinutes,
+            AVG(s.remSleepMinutes) AS avgRemSleepMinutes,
+            AVG(s.sleepScore) AS avgSleepScore
+        FROM sleep_details s
+        WHERE s.date < :beforeDate
+          AND s.totalSleepMinutes > 0
+        GROUP BY groupName
+        """
+    )
+    suspend fun trainingSleepAggregatesBefore(beforeDate: String): List<TrainingSleepAggregate>
+
+    @Query(
+        """
+        SELECT
             workoutType AS workoutType,
             COUNT(*) AS sessionCount,
             MIN(date) AS firstDate,
@@ -389,6 +482,24 @@ interface DailySummaryDao {
         """
     )
     suspend fun workoutTypeSessionAggregates(): List<WorkoutTypeSessionAggregate>
+
+    @Query(
+        """
+        SELECT
+            workoutType AS workoutType,
+            COUNT(*) AS sessionCount,
+            MIN(date) AS firstDate,
+            MAX(date) AS lastDate,
+            COALESCE(SUM(distanceMeters), 0) / 1000.0 AS distanceKm,
+            COUNT(CASE WHEN avgHeartRateBpm IS NOT NULL THEN 1 END) AS heartSessions,
+            COUNT(CASE WHEN vo2Max IS NOT NULL THEN 1 END) AS vo2Sessions
+        FROM workout_sessions
+        WHERE date < :beforeDate
+        GROUP BY workoutType
+        ORDER BY sessionCount DESC
+        """
+    )
+    suspend fun workoutTypeSessionAggregatesBefore(beforeDate: String): List<WorkoutTypeSessionAggregate>
 
     @Query(
         """

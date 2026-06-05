@@ -1,12 +1,15 @@
 package com.vitrace.app.analysis
 
 import com.vitrace.app.data.AnalysisResultEntity
+import com.vitrace.app.data.ActivityPeriodAggregate
+import com.vitrace.app.data.MonthlySleepPhaseAggregate
 import com.vitrace.app.data.SleepActivityFeatureRow
 import com.vitrace.app.data.SleepNextDayActivityRow
 import com.vitrace.app.data.TrainingSleepAggregate
 import com.vitrace.app.data.UserProfileEntity
 import com.vitrace.app.data.VitaTraceDatabase
 import com.vitrace.app.data.WalkingDistanceBandAggregate
+import com.vitrace.app.data.WorkoutTypeSessionAggregate
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -62,16 +65,20 @@ object InsightEngine {
     ): List<TestedInsight> {
         val dao = database.dailySummaryDao()
         val today = LocalDate.ofInstant(now, ZoneId.systemDefault())
+        val todayText = today.toString()
         val currentEnd = today.minusDays(1)
         val currentStart = currentEnd.minusDays(89)
         val sleepActivityRows = dao.sleepActivityFeatureRows()
-            .filter { row -> row.date < today.toString() }
+            .filter { row -> row.date < todayText }
             .sortedBy { row -> row.date }
         val nextDayRows = dao.sleepNextDayActivityRows()
-            .filter { row -> row.date < today.toString() }
+            .filter { row -> row.date < todayText }
             .sortedBy { row -> row.date }
-        val trainingSleepRows = dao.trainingSleepAggregates()
-        val workoutTypes = dao.workoutTypeSessionAggregates()
+        val trainingSleepRows = dao.trainingSleepAggregatesBefore(todayText)
+        val workoutTypes = dao.workoutTypeSessionAggregatesBefore(todayText)
+        val yearlyActivity = dao.yearlyActivityBefore(todayText)
+        val bestActivityMonth = dao.bestActivityMonthBefore(todayText)
+        val monthlySleep = dao.monthlySleepPhasesBefore(beforeDate = todayText, limit = 8)
         val currentWalkingBands = dao.walkingBandsBetween(
             startDate = currentStart.toString(),
             endDate = currentEnd.toString(),
@@ -80,11 +87,17 @@ object InsightEngine {
 
         return listOf(
             buildCoverageInsight(
-                activityDays = dao.activityDays(),
+                activityDays = dao.activityDaysBefore(todayText),
                 sleepRows = sleepActivityRows,
                 workoutTypes = workoutTypes,
                 profile = profile,
             ),
+            buildLongTermActivityInsight(
+                yearlyActivity = yearlyActivity,
+                bestActivityMonth = bestActivityMonth,
+                profile = profile,
+            ),
+            buildMonthlySleepBaselineInsight(monthlySleep),
             buildSameNightSleepInsight(sleepActivityRows),
             buildNextDayActivityInsight(nextDayRows),
             buildTrainingSleepInsight(trainingSleepRows),
@@ -100,7 +113,7 @@ object InsightEngine {
     private fun buildCoverageInsight(
         activityDays: Int,
         sleepRows: List<SleepActivityFeatureRow>,
-        workoutTypes: List<com.vitrace.app.data.WorkoutTypeSessionAggregate>,
+        workoutTypes: List<WorkoutTypeSessionAggregate>,
         profile: UserProfileEntity,
     ): TestedInsight {
         val walking = workoutTypes.firstOrNull { row -> row.workoutType == "walking" }
@@ -127,6 +140,90 @@ object InsightEngine {
                 "kalorie z zegarka sa sygnalem pomocniczym",
             ),
             nextStep = "pierwsze wnioski liczyc z importu historycznego i dopiero potem laczyc z live",
+        )
+    }
+
+    private fun buildLongTermActivityInsight(
+        yearlyActivity: List<ActivityPeriodAggregate>,
+        bestActivityMonth: ActivityPeriodAggregate?,
+        profile: UserProfileEntity,
+    ): TestedInsight {
+        val chronologicalYears = yearlyActivity.sortedBy { row -> row.period }
+        val totalDays = yearlyActivity.sumOf { row -> row.daysWithActivity }
+        val bestYear = yearlyActivity.maxByOrNull { row -> row.steps }
+        val latestYear = chronologicalYears.lastOrNull()
+        val evidence = chronologicalYears.takeLast(6).map { year ->
+            "${year.period}: ${year.steps.formatSteps()} krokow, ${year.steps.estimatedKm(profile).format1()} km est., ${(year.distanceMeters / 1000.0).format1()} km z danych"
+        } + listOfNotNull(
+            bestYear?.let { year -> "najlepszy rok: ${year.period}, ${year.steps.formatSteps()} krokow" },
+            bestActivityMonth?.let { month ->
+                "najlepszy miesiac: ${month.period}, ${month.steps.formatSteps()} krokow, ${month.steps.estimatedKm(profile).format1()} km est."
+            },
+        )
+
+        return TestedInsight(
+            id = "long_term_steps_km",
+            domain = "Aktywnosc",
+            title = "Ile chodzenia widac w skali lat?",
+            answer = when {
+                yearlyActivity.isEmpty() -> "Nie ma jeszcze zamknietych dni aktywnosci do rocznych podsumowan."
+                latestYear != null && bestYear != null && latestYear.period == bestYear.period ->
+                    "Najmocniejsza wartosc aplikacji teraz to roczne i miesieczne kroki/km. Najnowszy zamkniety rok w danych jest jednoczesnie najlepszy pod wzgledem liczby krokow."
+                else -> "Najmocniejsza wartosc aplikacji teraz to roczne i miesieczne kroki/km, bo tego brakuje w prostym widoku Mi Fitness."
+            },
+            evidence = evidence,
+            dateRange = if (chronologicalYears.isEmpty()) "brak danych" else "${chronologicalYears.first().period} - ${chronologicalYears.last().period}",
+            sampleSize = totalDays,
+            confidence = confidenceForSample(totalDays),
+            limitations = listOf(
+                "km est. liczymy z profilu ${profile.stepsPerKm} krokow/km",
+                "km z danych pochodzi z importu i moze roznic sie od przelicznika krokow",
+                "dzisiejszy czesciowy dzien nie jest uzyty w trendzie",
+            ),
+            nextStep = "dodac trend miesiac do miesiaca i pokazac osobno km est. oraz km z danych",
+        )
+    }
+
+    private fun buildMonthlySleepBaselineInsight(
+        monthlySleep: List<MonthlySleepPhaseAggregate>,
+    ): TestedInsight {
+        val newest = monthlySleep.firstOrNull()
+        val baseline = monthlySleep.drop(1)
+        val baselineTotal = baseline.map { row -> row.avgTotalSleepMinutes }.averageOrNull()
+        val baselineRem = baseline.mapNotNull { row -> row.avgRemSleepMinutes }.averageOrNull()
+        val baselineDeep = baseline.mapNotNull { row -> row.avgDeepSleepMinutes }.averageOrNull()
+        val totalDelta = newest?.avgTotalSleepMinutes.minusNullable(baselineTotal)
+        val remDelta = newest?.avgRemSleepMinutes.minusNullable(baselineRem)
+        val deepDelta = newest?.avgDeepSleepMinutes.minusNullable(baselineDeep)
+        val totalNights = monthlySleep.sumOf { row -> row.sleepDays }
+
+        val evidence = monthlySleep.take(6).map { month ->
+            "${month.period}: ${month.sleepDays} nocy, sen ${month.avgTotalSleepMinutes.formatMinutes()}, REM ${month.avgRemSleepMinutes.format0()} min, gleboki ${month.avgDeepSleepMinutes.format0()} min, score ${month.avgSleepScore.format0()}"
+        } + listOfNotNull(
+            newest?.let { "najnowszy miesiac vs baseline: sen ${totalDelta.formatSigned0()} min, REM ${remDelta.formatSigned0()} min, gleboki ${deepDelta.formatSigned0()} min" },
+        )
+
+        return TestedInsight(
+            id = "sleep_monthly_baseline",
+            domain = "Sen",
+            title = "Jak wyglada miesieczny baseline snu?",
+            answer = when {
+                newest == null -> "Brakuje miesiecy z detalami snu, wiec nie ma jeszcze baseline."
+                newest.sleepDays < 7 -> "Mamy fazy snu miesiacami, ale najnowszy miesiac ma jeszcze mala probke. Traktujemy go jako wczesny sygnal, nie trend."
+                baselineTotal != null && abs(totalDelta ?: 0.0) < 20.0 ->
+                    "Najnowszy miesiac wyglada podobnie do Twojego ostatniego baseline snu. Warto sledzic REM i sen gleboki miesiac do miesiaca."
+                else -> "Miesieczny baseline snu jest gotowy do porownan: caly sen, REM, gleboki, lekki, czuwanie i score."
+            },
+            evidence = evidence,
+            dateRange = if (monthlySleep.isEmpty()) "brak danych" else "${monthlySleep.last().period} - ${monthlySleep.first().period}",
+            sampleSize = totalNights,
+            confidence = confidenceForSample(totalNights),
+            limitations = listOf(
+                "fazy snu z zegarka sa estymacja i lepiej nadaja sie do trendow niz do diagnozy",
+                "miesiac z mala liczba nocy nie powinien byc traktowany jak pelny miesiac",
+                "dzisiejszy czesciowy sen nie jest uzyty w trendzie",
+            ),
+            nextStep = "dodac wykres stacked bar miesiacami i test sleep debt 7/14/30 dni",
         )
     }
 
@@ -464,6 +561,18 @@ private fun <T : Number> List<T>.averageOrNull(): Double? {
         return null
     }
     return map { number -> number.toDouble() }.average()
+}
+
+private fun Long.formatSteps(): String {
+    return "%,d".format(this)
+}
+
+private fun Long.estimatedKm(profile: UserProfileEntity): Double {
+    return if (profile.stepsPerKm > 0) {
+        toDouble() / profile.stepsPerKm
+    } else {
+        0.0
+    }
 }
 
 private fun Double?.minusNullable(other: Double?): Double? {

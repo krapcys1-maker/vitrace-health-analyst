@@ -17,12 +17,16 @@ from typing import Iterable
 
 
 DEFAULT_DB = Path("build/phone-db-check/vitrace-after-am-start.db")
-EXPECTED_SCOPES = {
+CORE_SCOPES = {
     "data_coverage_reality",
     "activity_sleep_same_night",
     "sleep_next_day_activity",
     "training_day_sleep",
     "walking_efficiency_by_distance_band",
+}
+KNOWN_SCOPES = CORE_SCOPES | {
+    "long_term_steps_km",
+    "sleep_monthly_baseline",
 }
 REQUIRED_RESULT_KEYS = {
     "id",
@@ -114,8 +118,8 @@ def audit_current_insights(con: sqlite3.Connection, errors: list[str]) -> None:
         )
     )
     scopes = {row["scope"] for row in rows}
-    missing = EXPECTED_SCOPES - scopes
-    extra = scopes - EXPECTED_SCOPES
+    missing = CORE_SCOPES - scopes
+    extra = scopes - KNOWN_SCOPES
     if missing:
         errors.append(f"missing current tested insights: {sorted(missing)}")
     if extra:
