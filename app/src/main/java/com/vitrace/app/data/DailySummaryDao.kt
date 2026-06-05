@@ -95,4 +95,52 @@ interface DailySummaryDao {
         """
     )
     suspend fun signalCountsSince(startDate: String): DashboardSignalCounts
+
+    @Query("SELECT * FROM daily_activity_summaries WHERE date IN (:dates)")
+    suspend fun activityRowsForDates(dates: List<String>): List<DailyActivitySummaryEntity>
+
+    @Query("SELECT * FROM daily_heart_summaries WHERE date IN (:dates)")
+    suspend fun heartRowsForDates(dates: List<String>): List<DailyHeartSummaryEntity>
+
+    @Query("SELECT * FROM daily_sleep_summaries WHERE date IN (:dates)")
+    suspend fun sleepRowsForDates(dates: List<String>): List<DailySleepSummaryEntity>
+
+    @Query("SELECT * FROM daily_workout_summaries WHERE date IN (:dates)")
+    suspend fun workoutRowsForDates(dates: List<String>): List<DailyWorkoutSummaryEntity>
+
+    @Query("SELECT * FROM daily_body_summaries WHERE date IN (:dates)")
+    suspend fun bodyRowsForDates(dates: List<String>): List<DailyBodySummaryEntity>
+
+    @Query(
+        """
+        SELECT
+            substr(date, 1, 4) AS period,
+            COALESCE(SUM(steps), 0) AS steps,
+            COALESCE(SUM(distanceMeters), 0) AS distanceMeters,
+            COALESCE(SUM(activeCaloriesKcal), 0) AS activeCaloriesKcal,
+            COUNT(CASE WHEN steps > 0 OR distanceMeters > 0 OR activeCaloriesKcal > 0 THEN 1 END) AS daysWithActivity
+        FROM daily_activity_summaries
+        WHERE steps > 0 OR distanceMeters > 0 OR activeCaloriesKcal > 0
+        GROUP BY substr(date, 1, 4)
+        ORDER BY period DESC
+        """
+    )
+    suspend fun yearlyActivity(): List<ActivityPeriodAggregate>
+
+    @Query(
+        """
+        SELECT
+            substr(date, 1, 7) AS period,
+            COALESCE(SUM(steps), 0) AS steps,
+            COALESCE(SUM(distanceMeters), 0) AS distanceMeters,
+            COALESCE(SUM(activeCaloriesKcal), 0) AS activeCaloriesKcal,
+            COUNT(CASE WHEN steps > 0 OR distanceMeters > 0 OR activeCaloriesKcal > 0 THEN 1 END) AS daysWithActivity
+        FROM daily_activity_summaries
+        WHERE steps > 0 OR distanceMeters > 0 OR activeCaloriesKcal > 0
+        GROUP BY substr(date, 1, 7)
+        ORDER BY steps DESC
+        LIMIT 1
+        """
+    )
+    suspend fun bestActivityMonth(): ActivityPeriodAggregate?
 }

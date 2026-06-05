@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
 import com.vitrace.app.analysis.AnalysisBlock
 import com.vitrace.app.analysis.buildVitaTraceAnalysis
+import com.vitrace.app.data.UserProfileEntity
 import com.vitrace.app.health.ActivityWindow
 import com.vitrace.app.health.DataQualityItem
 import com.vitrace.app.health.DailySyncSummary
@@ -54,6 +55,7 @@ import com.vitrace.app.health.HealthDashboard
 import com.vitrace.app.health.HealthConnectDiagnostics
 import com.vitrace.app.health.HealthConnectDiagnosticsRepository
 import com.vitrace.app.health.HealthConnectSdkStatus
+import com.vitrace.app.health.LongTermActivitySummary
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -136,7 +138,10 @@ private fun HealthConnectScreen() {
                 loading = loading,
                 onRefresh = { refresh(syncFromHealthConnect = true) },
             )
-            AppTab.Analysis -> AnalysisTab(dashboard = diagnostics?.dashboard)
+            AppTab.Analysis -> AnalysisTab(
+                dashboard = diagnostics?.dashboard,
+                longTermActivity = diagnostics?.longTermActivity,
+            )
             AppTab.Data -> DataTab(
                 diagnostics = diagnostics,
                 loading = loading,
@@ -148,7 +153,7 @@ private fun HealthConnectScreen() {
                 },
                 onRefresh = { refresh(syncFromHealthConnect = true) },
             )
-            AppTab.Profile -> ProfileTab()
+            AppTab.Profile -> ProfileTab(profile = diagnostics?.profile)
         }
         Spacer(modifier = Modifier.height(96.dp))
     }
@@ -253,11 +258,15 @@ private fun DashboardTab(
 }
 
 @Composable
-private fun AnalysisTab(dashboard: HealthDashboard?) {
+private fun AnalysisTab(
+    dashboard: HealthDashboard?,
+    longTermActivity: LongTermActivitySummary?,
+) {
     val report = buildVitaTraceAnalysis(dashboard)
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SectionTitle("Analiza")
+        LongTermActivitySection(summary = longTermActivity)
         AnalysisCard(
             title = "Co VitaTrace ma robic lepiej niz Mi Fitness",
             lines = listOf(
@@ -298,9 +307,10 @@ private fun DataTab(
 }
 
 @Composable
-private fun ProfileTab() {
+private fun ProfileTab(profile: UserProfileEntity?) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        SectionTitle("Profil i prywatnosc")
+        SectionTitle("Profil")
+        ProfileCard(profile = profile)
         AnalysisCard(
             title = "Rola aplikacji",
             lines = listOf(
@@ -319,6 +329,110 @@ private fun ProfileTab() {
             ),
             quality = DiagnosticQuality.Good,
         )
+    }
+}
+
+@Composable
+private fun ProfileCard(profile: UserProfileEntity?) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "Dane bazowe",
+                style = MaterialTheme.typography.titleMedium,
+                color = Color(0xFF0F172A),
+                fontWeight = FontWeight.Bold,
+            )
+            CompactMetricRow(
+                label = "Plec",
+                value = when (profile?.sex) {
+                    "male" -> "mezczyzna"
+                    "female" -> "kobieta"
+                    null -> "brak"
+                    else -> profile.sex
+                },
+                quality = if (profile == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
+            )
+            CompactMetricRow(
+                label = "Wiek",
+                value = profile?.let { "${it.ageYears} lat" } ?: "brak",
+                quality = if (profile == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
+            )
+            CompactMetricRow(
+                label = "Wzrost",
+                value = profile?.let { "${it.heightCm} cm" } ?: "brak",
+                quality = if (profile == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
+            )
+            CompactMetricRow(
+                label = "Waga",
+                value = profile?.let { "${it.weightKg.format1()} kg" } ?: "brak",
+                quality = if (profile == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
+            )
+            CompactMetricRow(
+                label = "Przelicznik",
+                value = profile?.let { "${it.stepsPerKm} krokow/km" } ?: "brak",
+                quality = if (profile == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LongTermActivitySection(summary: LongTermActivitySummary?) {
+    if (summary == null || summary.yearly.isEmpty()) {
+        AnalysisCard(
+            title = "Aktywnosc dlugoterminowa",
+            lines = listOf(
+                "czekamy na import historii Mi Fitness",
+                "po imporcie policzymy kroki i km dla kazdego roku",
+            ),
+            quality = DiagnosticQuality.Warning,
+        )
+        return
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = "Aktywnosc dlugoterminowa",
+                style = MaterialTheme.typography.titleMedium,
+                color = Color(0xFF0F172A),
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = "km liczone z ${summary.stepsPerKm} krokow/km",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF64748B),
+            )
+            summary.yearly.take(6).forEach { year ->
+                CompactMetricRow(
+                    label = year.period,
+                    value = "${year.steps.formatWhole()} krokow | ${year.estimatedKm.format1()} km",
+                    quality = DiagnosticQuality.Good,
+                )
+            }
+            summary.bestMonth?.let { best ->
+                HorizontalDivider(color = Color(0xFFE2E8F0))
+                CompactMetricRow(
+                    label = "Najlepszy miesiac",
+                    value = "${best.period}: ${best.steps.formatWhole()} krokow",
+                    quality = DiagnosticQuality.Good,
+                )
+            }
+        }
     }
 }
 
@@ -1037,6 +1151,8 @@ private fun Double.qualityForPositive(): DiagnosticQuality {
 private fun Double.format0(): String = "%,.0f".format(this)
 
 private fun Double.format1(): String = "%,.1f".format(this)
+
+private fun Long.formatWhole(): String = "%,d".format(this)
 
 private fun DataQualityItem.statusLabel(): String {
     return when {

@@ -21,8 +21,10 @@ import com.vitrace.app.data.DailyBodySummaryEntity
 import com.vitrace.app.data.DailyHeartSummaryEntity
 import com.vitrace.app.data.DailySleepSummaryEntity
 import com.vitrace.app.data.DailyWorkoutSummaryEntity
+import com.vitrace.app.data.ActivityPeriodAggregate
 import com.vitrace.app.data.DashboardActivityAggregate
 import com.vitrace.app.data.HealthConnectQualitySnapshotEntity
+import com.vitrace.app.data.UserProfileEntity
 import com.vitrace.app.data.VitaTraceDatabase
 import java.time.Duration
 import java.time.Instant
@@ -65,12 +67,15 @@ object HealthConnectDiagnosticsRepository {
         val database = VitaTraceDatabase.get(context)
         val sdkStatus = getSdkStatus(context)
         val end = Instant.now()
+        val profile = database.loadUserProfile(end)
 
         if (!syncFromHealthConnect) {
             return HealthConnectDiagnostics(
                 sdkStatus = sdkStatus,
                 requiredPermissionCount = requiredPermissions.size,
                 dashboard = database.loadDashboard(end),
+                profile = profile,
+                longTermActivity = database.loadLongTermActivity(profile),
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
             )
@@ -83,6 +88,8 @@ object HealthConnectDiagnosticsRepository {
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
                 dashboard = database.loadDashboard(end),
+                profile = profile,
+                longTermActivity = database.loadLongTermActivity(profile),
             )
         }
 
@@ -109,6 +116,8 @@ object HealthConnectDiagnosticsRepository {
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
                 dashboard = database.loadDashboard(end),
+                profile = profile,
+                longTermActivity = database.loadLongTermActivity(profile),
             )
         }
 
@@ -143,6 +152,8 @@ object HealthConnectDiagnosticsRepository {
                 rows = rows,
                 dataQualityItems = qualityItems,
                 dashboard = database.loadDashboard(end),
+                profile = profile,
+                longTermActivity = database.loadLongTermActivity(profile),
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
             )
@@ -155,6 +166,8 @@ object HealthConnectDiagnosticsRepository {
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
                 dashboard = database.loadDashboard(end),
+                profile = profile,
+                longTermActivity = database.loadLongTermActivity(profile),
                 error = error.toUserMessage(),
             )
         }
@@ -228,11 +241,36 @@ object HealthConnectDiagnosticsRepository {
         }
 
         val dao = database.dailySummaryDao()
-        dao.upsertActivity(activity)
-        dao.upsertHeart(heart)
-        dao.upsertSleep(sleep)
-        dao.upsertWorkouts(workouts)
-        dao.upsertBody(body)
+        val dateKeys = dates.map { date -> date.toString() }
+        val existingActivity = dao.activityRowsForDates(dateKeys).associateBy { summary -> summary.date }
+        val existingHeart = dao.heartRowsForDates(dateKeys).associateBy { summary -> summary.date }
+        val existingSleep = dao.sleepRowsForDates(dateKeys).associateBy { summary -> summary.date }
+        val existingWorkouts = dao.workoutRowsForDates(dateKeys).associateBy { summary -> summary.date }
+        val existingBody = dao.bodyRowsForDates(dateKeys).associateBy { summary -> summary.date }
+
+        dao.upsertActivity(activity.map { summary ->
+            summary.mergeWith(existingActivity[summary.date])
+        }.filter { summary ->
+            summary.steps > 0 || summary.distanceMeters > 0.0 || summary.activeCaloriesKcal > 0.0
+        })
+        dao.upsertHeart(heart.map { summary ->
+            summary.mergeWith(existingHeart[summary.date])
+        }.filter { summary -> summary.sampleCount > 0 })
+        dao.upsertSleep(sleep.map { summary ->
+            summary.mergeWith(existingSleep[summary.date])
+        }.filter { summary ->
+            summary.sessionCount > 0 || summary.totalSleepMinutes > 0
+        })
+        dao.upsertWorkouts(workouts.map { summary ->
+            summary.mergeWith(existingWorkouts[summary.date])
+        }.filter { summary ->
+            summary.sessionCount > 0 || summary.totalDurationMinutes > 0
+        })
+        dao.upsertBody(body.map { summary ->
+            summary.mergeWith(existingBody[summary.date])
+        }.filter { summary ->
+            summary.weightRecordCount > 0 || summary.vo2MaxRecordCount > 0 || summary.spo2RecordCount > 0
+        })
     }
 
     private suspend fun loadDailyActivity(
@@ -528,6 +566,46 @@ object HealthConnectDiagnosticsRepository {
         )
     }
 
+    private suspend fun VitaTraceDatabase.loadUserProfile(now: Instant): UserProfileEntity {
+        val existing = userProfileDao().getProfile()
+        if (existing != null) {
+            return existing
+        }
+
+        val profile = UserProfileEntity(
+            sex = "male",
+            ageYears = 40,
+            heightCm = 186,
+            weightKg = 88.0,
+            stepsPerKm = 1250,
+            source = "USER_PROVIDED",
+            updatedAtEpochMs = now.toEpochMilli(),
+        )
+        userProfileDao().upsert(profile)
+        return profile
+    }
+
+    private suspend fun VitaTraceDatabase.loadLongTermActivity(
+        profile: UserProfileEntity,
+    ): LongTermActivitySummary {
+        val dao = dailySummaryDao()
+        return LongTermActivitySummary(
+            stepsPerKm = profile.stepsPerKm,
+            yearly = dao.yearlyActivity().map { aggregate -> aggregate.toActivityPeriodSummary(profile.stepsPerKm) },
+            bestMonth = dao.bestActivityMonth()?.toActivityPeriodSummary(profile.stepsPerKm),
+        )
+    }
+
+    private fun ActivityPeriodAggregate.toActivityPeriodSummary(stepsPerKm: Int): ActivityPeriodSummary {
+        return ActivityPeriodSummary(
+            period = period,
+            steps = steps,
+            estimatedKm = if (stepsPerKm > 0) steps.toDouble() / stepsPerKm.toDouble() else 0.0,
+            recordedKm = distanceMeters / 1000.0,
+            activeDays = daysWithActivity,
+        )
+    }
+
     private fun DashboardActivityAggregate.toActivityWindow(): ActivityWindow {
         return ActivityWindow(
             steps = steps,
@@ -535,6 +613,48 @@ object HealthConnectDiagnosticsRepository {
             activeCaloriesKcal = activeCaloriesKcal,
             daysWithActivity = daysWithActivity,
         )
+    }
+
+    private fun DailyActivitySummaryEntity.mergeWith(existing: DailyActivitySummaryEntity?): DailyActivitySummaryEntity {
+        if (existing == null) {
+            return this
+        }
+        return copy(
+            steps = maxOf(steps, existing.steps),
+            distanceMeters = maxOf(distanceMeters, existing.distanceMeters),
+            activeCaloriesKcal = maxOf(activeCaloriesKcal, existing.activeCaloriesKcal),
+            source = source.mergeSource(existing.source),
+        )
+    }
+
+    private fun DailyHeartSummaryEntity.mergeWith(existing: DailyHeartSummaryEntity?): DailyHeartSummaryEntity {
+        if (existing == null || sampleCount >= existing.sampleCount) {
+            return this
+        }
+        return existing
+    }
+
+    private fun DailySleepSummaryEntity.mergeWith(existing: DailySleepSummaryEntity?): DailySleepSummaryEntity {
+        if (existing == null || totalSleepMinutes >= existing.totalSleepMinutes) {
+            return this
+        }
+        return existing
+    }
+
+    private fun DailyWorkoutSummaryEntity.mergeWith(existing: DailyWorkoutSummaryEntity?): DailyWorkoutSummaryEntity {
+        if (existing == null || totalDurationMinutes >= existing.totalDurationMinutes) {
+            return this
+        }
+        return existing
+    }
+
+    private fun DailyBodySummaryEntity.mergeWith(existing: DailyBodySummaryEntity?): DailyBodySummaryEntity {
+        if (existing == null) {
+            return this
+        }
+        val existingSignals = existing.weightRecordCount + existing.vo2MaxRecordCount + existing.spo2RecordCount
+        val newSignals = weightRecordCount + vo2MaxRecordCount + spo2RecordCount
+        return if (newSignals >= existingSignals) this else existing
     }
 
     private fun DataQualityItem.toSnapshot(capturedAt: Instant): HealthConnectQualitySnapshotEntity {
@@ -573,6 +693,16 @@ object HealthConnectDiagnosticsRepository {
 
     private fun Set<String>.sourceLabel(): String {
         return if (isEmpty()) "none" else joinToString()
+    }
+
+    private fun String.mergeSource(other: String): String {
+        return split(",")
+            .map { source -> source.trim() }
+            .plus(other.split(",").map { source -> source.trim() })
+            .filter { source -> source.isNotEmpty() && source != "none" }
+            .distinct()
+            .joinToString()
+            .ifEmpty { "none" }
     }
 
     private fun overlapMinutes(

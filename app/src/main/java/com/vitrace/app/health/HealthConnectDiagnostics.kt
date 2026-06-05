@@ -1,5 +1,7 @@
 package com.vitrace.app.health
 
+import com.vitrace.app.data.UserProfileEntity
+
 data class HealthConnectDiagnostics(
     val sdkStatus: HealthConnectSdkStatus,
     val grantedPermissionCount: Int = 0,
@@ -8,6 +10,8 @@ data class HealthConnectDiagnostics(
     val rows: List<DiagnosticRow> = emptyList(),
     val dataQualityItems: List<DataQualityItem> = emptyList(),
     val dashboard: HealthDashboard? = null,
+    val profile: UserProfileEntity? = null,
+    val longTermActivity: LongTermActivitySummary? = null,
     val savedSnapshotCount: Int = 0,
     val dailySyncSummary: DailySyncSummary? = null,
     val error: String? = null,
@@ -57,6 +61,20 @@ data class HealthDashboard(
     val last30Days: ActivityWindow,
     val signalCounts: DashboardSignalCounts,
     val lastSyncedAt: String?,
+)
+
+data class LongTermActivitySummary(
+    val stepsPerKm: Int,
+    val yearly: List<ActivityPeriodSummary>,
+    val bestMonth: ActivityPeriodSummary?,
+)
+
+data class ActivityPeriodSummary(
+    val period: String,
+    val steps: Long,
+    val estimatedKm: Double,
+    val recordedKm: Double,
+    val activeDays: Int,
 )
 
 data class ActivityWindow(

@@ -13,3 +13,11 @@ data class DashboardSignalCounts(
     val workoutDays: Int,
     val bodyDays: Int,
 )
+
+data class ActivityPeriodAggregate(
+    val period: String,
+    val steps: Long,
+    val distanceMeters: Double,
+    val activeCaloriesKcal: Double,
+    val daysWithActivity: Int,
+)

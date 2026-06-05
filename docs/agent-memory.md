@@ -60,6 +60,8 @@ Local Mi Fitness export summary:
 - Main product direction is Personal Body Intelligence: understand the user's own body from long-term personal data, including yearly/monthly steps, estimated km, sleep/activity correlations, cardio efficiency, VO2 max, weight, and future body composition.
 - Use configurable `stepsPerKm` for estimated distance from steps; default should be `1250`.
 - Correlation insights require sample size and confidence rules. Do not show claims from fewer than 14 comparable days.
+- User profile currently set in app DB: male, 40 years, 186 cm, 88 kg, `stepsPerKm = 1250`.
+- Health Connect foreground sync must merge with richer historical import rows and must not overwrite history with zero/poorer records.
 
 ## Important Local Paths
 
@@ -73,6 +75,7 @@ Local Mi Fitness export summary:
 - Public desktop roadmap: `docs/desktop-roadmap.md`
 - Public analytics product plan: `docs/analytics-product-plan.md`
 - Public Personal Body Intelligence prompt: `docs/personal-body-intelligence-prompt.md`
+- Public local importer tool: `tools/import_mifitness_history_to_db.py`
 - Public living memory: `docs/agent-memory.md`
 
 ## Next Recommended Steps
@@ -104,6 +107,7 @@ Local Mi Fitness export summary:
 | 2026-06-05 | `vitrace/mvp-foundation` | Added analytics product plan, first tabbed app structure, and separated deterministic analysis rules from the Compose screen. | `:app:assembleDebug` passed; APK installed with ADB; Start, Analysis, and Data tabs verified with screenshots. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Fixed system bar clipping and redesigned the Data tab from technical Health Connect records into user-facing source coverage cards. | `:app:assembleDebug` passed; APK installed with ADB; bottom of Start, Analysis, and Data verified with screenshots. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Expanded product plan around Personal Body Intelligence, yearly/monthly steps, estimated kilometers, correlation confidence, body composition, VO2 max, and AI summary rules. | Documentation only; no build needed. |
+| 2026-06-05 | `vitrace/mvp-foundation` | Added user profile table, long-term activity summaries, local Mi Fitness history importer, and imported private history into the phone database. | `:app:assembleDebug` passed; importer reported 984 daily rows; APK installed; Start, Analysis, and Profile screenshots verified; Health Connect sync kept imported history intact. |
 
 ## Update Protocol
 

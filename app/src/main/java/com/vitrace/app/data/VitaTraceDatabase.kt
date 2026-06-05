@@ -15,13 +15,15 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DailySleepSummaryEntity::class,
         DailyWorkoutSummaryEntity::class,
         DailyBodySummaryEntity::class,
+        UserProfileEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class VitaTraceDatabase : RoomDatabase() {
     abstract fun healthConnectQualitySnapshotDao(): HealthConnectQualitySnapshotDao
     abstract fun dailySummaryDao(): DailySummaryDao
+    abstract fun userProfileDao(): UserProfileDao
 
     companion object {
         @Volatile
@@ -98,6 +100,48 @@ abstract class VitaTraceDatabase : RoomDatabase() {
             }
         }
 
+        private val migration2To3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS user_profile (
+                        id INTEGER NOT NULL PRIMARY KEY,
+                        sex TEXT NOT NULL,
+                        ageYears INTEGER NOT NULL,
+                        heightCm INTEGER NOT NULL,
+                        weightKg REAL NOT NULL,
+                        stepsPerKm INTEGER NOT NULL,
+                        source TEXT NOT NULL,
+                        updatedAtEpochMs INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT OR REPLACE INTO user_profile (
+                        id,
+                        sex,
+                        ageYears,
+                        heightCm,
+                        weightKg,
+                        stepsPerKm,
+                        source,
+                        updatedAtEpochMs
+                    ) VALUES (
+                        1,
+                        'male',
+                        40,
+                        186,
+                        88.0,
+                        1250,
+                        'USER_PROVIDED',
+                        1780657200000
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun get(context: Context): VitaTraceDatabase {
             return instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -106,6 +150,7 @@ abstract class VitaTraceDatabase : RoomDatabase() {
                     "vitrace.db",
                 )
                     .addMigrations(migration1To2)
+                    .addMigrations(migration2To3)
                     .build().also { database ->
                     instance = database
                 }

@@ -56,6 +56,14 @@ Implementation should happen in stages:
 5. Run the importer on the private export locally only.
 6. Compare imported aggregates against Mi Fitness visible totals and the existing export profile.
 
+Current local development importer:
+
+- `tools/import_mifitness_history_to_db.py`
+- Reads the private Mi Fitness export directory.
+- Writes normalized daily aggregates into a copied VitaTrace SQLite database.
+- Does not commit raw CSV data or generated databases.
+- Current mapped aggregates: activity, heart, sleep, workouts, weight, VO2 max, SpO2, and user profile settings.
+
 After tests pass, run the importer on the private export and compare:
 
 - imported date range
