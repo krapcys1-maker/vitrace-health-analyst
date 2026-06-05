@@ -24,6 +24,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -56,6 +57,7 @@ import com.vitrace.app.health.HealthDashboard
 import com.vitrace.app.health.HealthConnectDiagnostics
 import com.vitrace.app.health.HealthConnectDiagnosticsRepository
 import com.vitrace.app.health.HealthConnectSdkStatus
+import com.vitrace.app.health.HealthJournalSummary
 import com.vitrace.app.health.LongTermActivitySummary
 import com.vitrace.app.health.SleepDomainSummary
 import com.vitrace.app.health.SportDomainSummary
@@ -95,6 +97,7 @@ private fun HealthConnectScreen() {
     val scope = rememberCoroutineScope()
     var diagnostics by remember { mutableStateOf<HealthConnectDiagnostics?>(null) }
     var loading by remember { mutableStateOf(false) }
+    var savingNote by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(AppTab.Sleep) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -115,6 +118,21 @@ private fun HealthConnectScreen() {
                 syncFromHealthConnect = syncFromHealthConnect,
             )
             loading = false
+        }
+    }
+
+    fun saveHealthNote(text: String) {
+        scope.launch {
+            savingNote = true
+            try {
+                HealthConnectDiagnosticsRepository.saveHealthNote(context, text)
+                diagnostics = HealthConnectDiagnosticsRepository.load(
+                    context = context,
+                    syncFromHealthConnect = false,
+                )
+            } finally {
+                savingNote = false
+            }
         }
     }
 
@@ -146,7 +164,11 @@ private fun HealthConnectScreen() {
                 )
                 AppTab.Sport -> SportTab(summary = diagnostics?.sportSummary)
                 AppTab.Weight -> WeightTab(summary = diagnostics?.bodySummary)
-                AppTab.Health -> HealthTab()
+                AppTab.Health -> HealthTab(
+                    journal = diagnostics?.healthJournal,
+                    saving = savingNote,
+                    onSaveNote = { text -> saveHealthNote(text) },
+                )
                 AppTab.Analysis -> AnalysisTab(
                     dashboard = diagnostics?.dashboard,
                     longTermActivity = diagnostics?.longTermActivity,
@@ -508,27 +530,143 @@ private fun WeightTab(summary: BodyDomainSummary?) {
 }
 
 @Composable
-private fun HealthTab() {
+private fun HealthTab(
+    journal: HealthJournalSummary?,
+    saving: Boolean,
+    onSaveNote: (String) -> Unit,
+) {
+    var noteText by remember { mutableStateOf("") }
+
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SectionTitle("Zdrowie")
+        HealthNoteCard(
+            text = noteText,
+            onTextChange = { value -> noteText = value },
+            saving = saving,
+            onSave = {
+                onSaveNote(noteText)
+                noteText = ""
+            },
+        )
+        HealthJournalCard(journal = journal)
         AnalysisCard(
-            title = "Wyniki badan",
+            title = "Analiza wynikow",
             lines = listOf(
-                "tu bedzie miejsce na skan albo zdjecie wynikow krwi",
-                "AI nie bedzie diagnozowac, tylko porzadkowac parametry i trendy",
-                "wyniki beda laczone z Twoim snem, sportem, pulsem i waga",
+                "najnowsze wyniki porownamy z Twoja historia",
+                "AI podsumuje zmiany, ale nie bedzie diagnozowac",
+                "wyniki beda laczone z notatkami, snem, sportem, pulsem i waga",
+            ),
+            quality = DiagnosticQuality.Neutral,
+        )
+        AnalysisCard(
+            title = "Co mozna z tego wyciagnac",
+            lines = listOf(
+                "czy kiepskie samopoczucie wraca po slabym snie",
+                "czy mocny trening obniza energie nastepnego dnia",
+                "czy zmiany w wadze/VO2 ida razem z pulsem i regeneracja",
+                "czy wyniki krwi zmieniaja sie po okresach wiekszej aktywnosci",
             ),
             quality = DiagnosticQuality.Neutral,
         )
         AnalysisCard(
             title = "Furtka techniczna",
             lines = listOf(
-                "potrzebujemy lokalnego magazynu dokumentow",
-                "potrzebujemy tabeli parametrow laboratoryjnych",
-                "kazdy odczyt ze skanu musi byc do potwierdzenia przez uzytkownika",
+                "skany badan trafia do lokalnego magazynu dokumentow",
+                "odczyt OCR musi byc potwierdzony przed analiza",
+                "notatki dzienne beda laczone z pomiarami z tego samego dnia",
             ),
             quality = DiagnosticQuality.Neutral,
         )
+    }
+}
+
+@Composable
+private fun HealthNoteCard(
+    text: String,
+    onTextChange: (String) -> Unit,
+    saving: Boolean,
+    onSave: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = "Notatka dzienna",
+                style = MaterialTheme.typography.titleMedium,
+                color = Color(0xFF0F172A),
+                fontWeight = FontWeight.Bold,
+            )
+            OutlinedTextField(
+                value = text,
+                onValueChange = onTextChange,
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+                label = { Text("Jak sie dzis czujesz?") },
+                placeholder = { Text("np. fizycznie slabo, psychicznie napiecie, bol glowy, malo energii") },
+            )
+            Button(
+                onClick = onSave,
+                enabled = !saving && text.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (saving) "Zapisuje..." else "Zapisz notatke")
+            }
+        }
+    }
+}
+
+@Composable
+private fun HealthJournalCard(journal: HealthJournalSummary?) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = "Dziennik zdrowia",
+                style = MaterialTheme.typography.titleMedium,
+                color = Color(0xFF0F172A),
+                fontWeight = FontWeight.Bold,
+            )
+            CompactMetricRow(
+                label = "Liczba notatek",
+                value = (journal?.noteCount ?: 0).toString(),
+                quality = (journal?.noteCount ?: 0).qualityForCount(),
+            )
+            val notes = journal?.latestNotes.orEmpty()
+            if (notes.isEmpty()) {
+                Text(
+                    text = "brak notatek",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF64748B),
+                )
+            } else {
+                notes.take(5).forEach { note ->
+                    HorizontalDivider(color = Color(0xFFE2E8F0))
+                    Text(
+                        text = note.date + if (note.tags.isBlank()) "" else " | ${note.tags}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF0F766E),
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = note.noteText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF475569),
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -15,6 +15,7 @@ data class HealthConnectDiagnostics(
     val sleepSummary: SleepDomainSummary? = null,
     val sportSummary: SportDomainSummary? = null,
     val bodySummary: BodyDomainSummary? = null,
+    val healthJournal: HealthJournalSummary? = null,
     val savedSnapshotCount: Int = 0,
     val dailySyncSummary: DailySyncSummary? = null,
     val error: String? = null,
@@ -131,6 +132,21 @@ data class BodyDomainSummary(
     val latestWeightKg: Double?,
     val latestVo2Max: Double?,
     val latestSpo2Percent: Double?,
+)
+
+data class HealthJournalSummary(
+    val noteCount: Int,
+    val latestNotes: List<HealthNoteEntry>,
+)
+
+data class HealthNoteEntry(
+    val id: Long,
+    val date: String,
+    val noteText: String,
+    val tags: String,
+    val moodScore: Int?,
+    val physicalScore: Int?,
+    val createdAtEpochMs: Long,
 )
 
 data class ActivityWindow(

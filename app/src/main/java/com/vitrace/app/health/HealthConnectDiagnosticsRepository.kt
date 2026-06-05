@@ -25,6 +25,7 @@ import com.vitrace.app.data.ActivityPeriodAggregate
 import com.vitrace.app.data.BodySignalAggregate
 import com.vitrace.app.data.DashboardActivityAggregate
 import com.vitrace.app.data.HealthConnectQualitySnapshotEntity
+import com.vitrace.app.data.HealthNoteEntity
 import com.vitrace.app.data.SleepPeriodAggregate
 import com.vitrace.app.data.UserProfileEntity
 import com.vitrace.app.data.VitaTraceDatabase
@@ -63,6 +64,30 @@ object HealthConnectDiagnosticsRepository {
         }
     }
 
+    suspend fun saveHealthNote(
+        context: Context,
+        text: String,
+    ) {
+        val cleaned = text.trim()
+        if (cleaned.isEmpty()) {
+            return
+        }
+        val database = VitaTraceDatabase.get(context)
+        val now = Instant.now()
+        val date = LocalDate.now(ZoneId.systemDefault()).toString()
+        database.healthNoteDao().insert(
+            HealthNoteEntity(
+                date = date,
+                noteText = cleaned,
+                tags = inferNoteTags(cleaned),
+                moodScore = null,
+                physicalScore = null,
+                createdAtEpochMs = now.toEpochMilli(),
+                updatedAtEpochMs = now.toEpochMilli(),
+            )
+        )
+    }
+
     suspend fun load(
         context: Context,
         syncFromHealthConnect: Boolean,
@@ -82,6 +107,7 @@ object HealthConnectDiagnosticsRepository {
                 sleepSummary = database.loadSleepDomainSummary(),
                 sportSummary = database.loadSportDomainSummary(profile),
                 bodySummary = database.loadBodyDomainSummary(),
+                healthJournal = database.loadHealthJournalSummary(),
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
             )
@@ -99,6 +125,7 @@ object HealthConnectDiagnosticsRepository {
                 sleepSummary = database.loadSleepDomainSummary(),
                 sportSummary = database.loadSportDomainSummary(profile),
                 bodySummary = database.loadBodyDomainSummary(),
+                healthJournal = database.loadHealthJournalSummary(),
             )
         }
 
@@ -130,6 +157,7 @@ object HealthConnectDiagnosticsRepository {
                 sleepSummary = database.loadSleepDomainSummary(),
                 sportSummary = database.loadSportDomainSummary(profile),
                 bodySummary = database.loadBodyDomainSummary(),
+                healthJournal = database.loadHealthJournalSummary(),
             )
         }
 
@@ -169,6 +197,7 @@ object HealthConnectDiagnosticsRepository {
                 sleepSummary = database.loadSleepDomainSummary(),
                 sportSummary = database.loadSportDomainSummary(profile),
                 bodySummary = database.loadBodyDomainSummary(),
+                healthJournal = database.loadHealthJournalSummary(),
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
             )
@@ -186,6 +215,7 @@ object HealthConnectDiagnosticsRepository {
                 sleepSummary = database.loadSleepDomainSummary(),
                 sportSummary = database.loadSportDomainSummary(profile),
                 bodySummary = database.loadBodyDomainSummary(),
+                healthJournal = database.loadHealthJournalSummary(),
                 error = error.toUserMessage(),
             )
         }
@@ -675,6 +705,16 @@ object HealthConnectDiagnosticsRepository {
         )
     }
 
+    private suspend fun VitaTraceDatabase.loadHealthJournalSummary(): HealthJournalSummary {
+        val notes = healthNoteDao().latest(limit = 10).map { note ->
+            note.toHealthNoteEntry()
+        }
+        return HealthJournalSummary(
+            noteCount = healthNoteDao().count(),
+            latestNotes = notes,
+        )
+    }
+
     private fun ActivityPeriodAggregate.toActivityPeriodSummary(stepsPerKm: Int): ActivityPeriodSummary {
         return ActivityPeriodSummary(
             period = period,
@@ -707,6 +747,18 @@ object HealthConnectDiagnosticsRepository {
             daysWithWorkouts = daysWithWorkouts,
             sessionCount = sessionCount,
             totalDurationMinutes = totalDurationMinutes,
+        )
+    }
+
+    private fun HealthNoteEntity.toHealthNoteEntry(): HealthNoteEntry {
+        return HealthNoteEntry(
+            id = id,
+            date = date,
+            noteText = noteText,
+            tags = tags,
+            moodScore = moodScore,
+            physicalScore = physicalScore,
+            createdAtEpochMs = createdAtEpochMs,
         )
     }
 
@@ -807,6 +859,25 @@ object HealthConnectDiagnosticsRepository {
             .distinct()
             .joinToString()
             .ifEmpty { "none" }
+    }
+
+    private fun inferNoteTags(text: String): String {
+        val normalized = text.lowercase()
+        val tags = buildList {
+            if (listOf("psych", "stres", "lek", "lęk", "nastroj", "nastrój", "glowa", "głowa").any { normalized.contains(it) }) {
+                add("psychika")
+            }
+            if (listOf("fiz", "zmecz", "zmęcz", "bol", "ból", "slabo", "słabo", "energia").any { normalized.contains(it) }) {
+                add("fizycznie")
+            }
+            if (listOf("sen", "spalem", "spałem", "niewyspan", "regener").any { normalized.contains(it) }) {
+                add("sen")
+            }
+            if (listOf("trening", "biegan", "spacer", "kroki", "silown", "siłown").any { normalized.contains(it) }) {
+                add("aktywnosc")
+            }
+        }
+        return tags.distinct().joinToString()
     }
 
     private fun overlapMinutes(

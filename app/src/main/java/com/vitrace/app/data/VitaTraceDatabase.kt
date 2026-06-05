@@ -16,14 +16,16 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DailyWorkoutSummaryEntity::class,
         DailyBodySummaryEntity::class,
         UserProfileEntity::class,
+        HealthNoteEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class VitaTraceDatabase : RoomDatabase() {
     abstract fun healthConnectQualitySnapshotDao(): HealthConnectQualitySnapshotDao
     abstract fun dailySummaryDao(): DailySummaryDao
     abstract fun userProfileDao(): UserProfileDao
+    abstract fun healthNoteDao(): HealthNoteDao
 
     companion object {
         @Volatile
@@ -142,6 +144,25 @@ abstract class VitaTraceDatabase : RoomDatabase() {
             }
         }
 
+        private val migration3To4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS health_notes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        date TEXT NOT NULL,
+                        noteText TEXT NOT NULL,
+                        tags TEXT NOT NULL,
+                        moodScore INTEGER,
+                        physicalScore INTEGER,
+                        createdAtEpochMs INTEGER NOT NULL,
+                        updatedAtEpochMs INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun get(context: Context): VitaTraceDatabase {
             return instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -151,6 +172,7 @@ abstract class VitaTraceDatabase : RoomDatabase() {
                 )
                     .addMigrations(migration1To2)
                     .addMigrations(migration2To3)
+                    .addMigrations(migration3To4)
                     .build().also { database ->
                     instance = database
                 }
