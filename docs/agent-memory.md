@@ -43,6 +43,7 @@ Local Mi Fitness export summary:
 
 - MVP starts with Mi Fitness CSV import, local database, normalized metrics, daily aggregates, dashboard, and Data Quality.
 - Health Connect starts as availability/probe/diagnostics, then full sync after real phone data appears.
+- Android app comes first. Desktop companion is planned later and should consume Android-exported aggregates.
 - Local database is the source of truth.
 - AI is not the first milestone.
 - Future AI may use DeepSeek only with aggregated summaries and explicit user consent.
@@ -56,6 +57,8 @@ Local Mi Fitness export summary:
 - Public agent instructions: `AGENTS.md`
 - Public clean project context: `docs/project-context.md`
 - Public Health Connect checklist: `docs/health-connect-live-data.md`
+- Public Android setup: `docs/android-setup.md`
+- Public desktop roadmap: `docs/desktop-roadmap.md`
 - Public living memory: `docs/agent-memory.md`
 
 ## Next Recommended Steps
@@ -74,6 +77,7 @@ Local Mi Fitness export summary:
 | 2026-06-05 | `vitrace/mvp-foundation` | Created repo, branch, starter README, gitignore, env example. | Not applicable; no app code yet. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Added agent guide, memory file, and clean project context. | Not applicable; documentation only. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Added Health Connect live data checklist and implementation order. | Not applicable; documentation only. |
+| 2026-06-05 | `vitrace/mvp-foundation` | Started Android Compose project and Health Connect diagnostics screen. | `gradlew.bat tasks` passed; `:app:assembleDebug` blocked by missing Android SDK path. |
 
 ## Update Protocol
 

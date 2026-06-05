@@ -12,6 +12,7 @@ New coding sessions should start with:
 2. `docs/agent-memory.md`
 3. `docs/project-context.md`
 4. `docs/health-connect-live-data.md`
+5. `docs/android-setup.md`
 
 These files are the project brain: current state, decisions, privacy rules, test expectations, and next steps.
 
