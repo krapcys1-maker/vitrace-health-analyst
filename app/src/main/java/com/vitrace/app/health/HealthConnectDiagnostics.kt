@@ -7,6 +7,7 @@ data class HealthConnectDiagnostics(
     val rows: List<DiagnosticRow> = emptyList(),
     val dataQualityItems: List<DataQualityItem> = emptyList(),
     val savedSnapshotCount: Int = 0,
+    val dailySyncSummary: DailySyncSummary? = null,
     val error: String? = null,
 ) {
     val hasAllPermissions: Boolean
@@ -37,6 +38,15 @@ data class DataQualityItem(
     val lastRecordAt: String?,
     val lastRecordAtEpochMs: Long?,
     val quality: DiagnosticQuality,
+)
+
+data class DailySyncSummary(
+    val activityDays: Int,
+    val heartDays: Int,
+    val sleepDays: Int,
+    val workoutDays: Int,
+    val bodyDays: Int,
+    val lastSyncedAt: String?,
 )
 
 enum class DiagnosticQuality {

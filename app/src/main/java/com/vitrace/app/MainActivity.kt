@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
 import com.vitrace.app.health.DataQualityItem
+import com.vitrace.app.health.DailySyncSummary
 import com.vitrace.app.health.DiagnosticQuality
 import com.vitrace.app.health.DiagnosticRow
 import com.vitrace.app.health.HealthConnectDiagnostics
@@ -119,6 +120,7 @@ private fun HealthConnectScreen() {
             },
             onRefresh = { refresh() },
         )
+        DailySyncSection(summary = diagnostics?.dailySyncSummary)
         DataQualitySection(items = diagnostics?.dataQualityItems.orEmpty())
         RowsSection(rows = diagnostics?.rows.orEmpty())
         diagnostics?.error?.let { error ->
@@ -215,6 +217,50 @@ private fun ActionSection(
         ) {
             Text("Permissions")
         }
+    }
+}
+
+@Composable
+private fun DailySyncSection(summary: DailySyncSummary?) {
+    if (summary == null) {
+        return
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        SectionTitle("Local daily summaries")
+        InfoRow(
+            label = "Last sync",
+            value = summary.lastSyncedAt ?: "none",
+            quality = if (summary.lastSyncedAt == null) DiagnosticQuality.Warning else DiagnosticQuality.Good,
+        )
+        InfoRow(
+            label = "Activity days",
+            value = summary.activityDays.toString(),
+            quality = summary.activityDays.qualityForCount(),
+        )
+        InfoRow(
+            label = "Heart days",
+            value = summary.heartDays.toString(),
+            quality = summary.heartDays.qualityForCount(),
+        )
+        InfoRow(
+            label = "Sleep days",
+            value = summary.sleepDays.toString(),
+            quality = summary.sleepDays.qualityForCount(),
+        )
+        InfoRow(
+            label = "Workout days",
+            value = summary.workoutDays.toString(),
+            quality = summary.workoutDays.qualityForCount(),
+        )
+        InfoRow(
+            label = "Body days",
+            value = summary.bodyDays.toString(),
+            quality = summary.bodyDays.qualityForCount(),
+        )
     }
 }
 
@@ -365,6 +411,10 @@ private fun InfoRow(
             textAlign = TextAlign.End,
         )
     }
+}
+
+private fun Int.qualityForCount(): DiagnosticQuality {
+    return if (this > 0) DiagnosticQuality.Good else DiagnosticQuality.Warning
 }
 
 private fun DataQualityItem.statusLabel(): String {

@@ -147,3 +147,5 @@ Each meaningful feature should include:
 - data quality behavior
 - tests or documented reason for no tests yet
 - update to `docs/agent-memory.md`
+
+Historical data import rules live in `docs/historical-data-import.md`. Raw Mi Fitness exports stay private and must not be committed.

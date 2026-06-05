@@ -16,12 +16,19 @@ import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
+import com.vitrace.app.data.DailyActivitySummaryEntity
+import com.vitrace.app.data.DailyBodySummaryEntity
+import com.vitrace.app.data.DailyHeartSummaryEntity
+import com.vitrace.app.data.DailySleepSummaryEntity
+import com.vitrace.app.data.DailyWorkoutSummaryEntity
 import com.vitrace.app.data.HealthConnectQualitySnapshotEntity
 import com.vitrace.app.data.VitaTraceDatabase
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import kotlin.reflect.KClass
 
 object HealthConnectDiagnosticsRepository {
@@ -58,6 +65,7 @@ object HealthConnectDiagnosticsRepository {
                 sdkStatus = sdkStatus,
                 requiredPermissionCount = requiredPermissions.size,
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
+                dailySyncSummary = database.loadDailySyncSummary(),
             )
         }
 
@@ -82,6 +90,7 @@ object HealthConnectDiagnosticsRepository {
                     metric.emptyQualityItem(hasPermission = granted.contains(metric.permission))
                 },
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
+                dailySyncSummary = database.loadDailySyncSummary(),
             )
         }
 
@@ -93,6 +102,7 @@ object HealthConnectDiagnosticsRepository {
                 item.toSnapshot(capturedAt = end)
             }
             database.healthConnectQualitySnapshotDao().insertAll(snapshots)
+            syncDailySummaries(client, database, end)
 
             val rows = buildList {
                 addRangeSummary(client, end, days = 1)
@@ -114,6 +124,7 @@ object HealthConnectDiagnosticsRepository {
                 rows = rows,
                 dataQualityItems = qualityItems,
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
+                dailySyncSummary = database.loadDailySyncSummary(),
             )
         } catch (error: Exception) {
             HealthConnectDiagnostics(
@@ -121,6 +132,7 @@ object HealthConnectDiagnosticsRepository {
                 grantedPermissionCount = requiredPermissions.size,
                 requiredPermissionCount = requiredPermissions.size,
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
+                dailySyncSummary = database.loadDailySyncSummary(),
                 error = error.message ?: error::class.java.simpleName,
             )
         }
@@ -164,6 +176,171 @@ object HealthConnectDiagnosticsRepository {
                 value = "${(aggregate[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories ?: 0.0).format0()} kcal",
                 quality = DiagnosticQuality.Good,
             )
+        )
+    }
+
+    private suspend fun syncDailySummaries(
+        client: HealthConnectClient,
+        database: VitaTraceDatabase,
+        end: Instant,
+    ) {
+        val zone = ZoneId.systemDefault()
+        val today = LocalDate.now(zone)
+        val dates = (29L downTo 0L).map { offset -> today.minusDays(offset) }
+        val syncedAt = end.toEpochMilli()
+
+        val activity = mutableListOf<DailyActivitySummaryEntity>()
+        val heart = mutableListOf<DailyHeartSummaryEntity>()
+        val sleep = mutableListOf<DailySleepSummaryEntity>()
+        val workouts = mutableListOf<DailyWorkoutSummaryEntity>()
+        val body = mutableListOf<DailyBodySummaryEntity>()
+
+        dates.forEach { date ->
+            val dayStart = date.atStartOfDay(zone).toInstant()
+            val dayEnd = date.plusDays(1).atStartOfDay(zone).toInstant()
+            activity += loadDailyActivity(client, date, dayStart, dayEnd, syncedAt)
+            heart += loadDailyHeart(client, date, dayStart, dayEnd, syncedAt)
+            sleep += loadDailySleep(client, date, dayStart, dayEnd, syncedAt)
+            workouts += loadDailyWorkouts(client, date, dayStart, dayEnd, syncedAt)
+            body += loadDailyBody(client, date, dayStart, dayEnd, syncedAt)
+        }
+
+        val dao = database.dailySummaryDao()
+        dao.upsertActivity(activity)
+        dao.upsertHeart(heart)
+        dao.upsertSleep(sleep)
+        dao.upsertWorkouts(workouts)
+        dao.upsertBody(body)
+    }
+
+    private suspend fun loadDailyActivity(
+        client: HealthConnectClient,
+        date: LocalDate,
+        start: Instant,
+        end: Instant,
+        syncedAt: Long,
+    ): DailyActivitySummaryEntity {
+        val aggregate = client.aggregate(
+            AggregateRequest(
+                metrics = setOf(
+                    StepsRecord.COUNT_TOTAL,
+                    DistanceRecord.DISTANCE_TOTAL,
+                    ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL,
+                ),
+                timeRangeFilter = TimeRangeFilter.between(start, end),
+            )
+        )
+        val stepOrigins = readRecordSummary(client, StepsRecord::class, start, end).origins
+        val calorieOrigins = readRecordSummary(client, ActiveCaloriesBurnedRecord::class, start, end).origins
+        val origins = stepOrigins + calorieOrigins
+
+        return DailyActivitySummaryEntity(
+            date = date.toString(),
+            steps = aggregate[StepsRecord.COUNT_TOTAL] ?: 0L,
+            distanceMeters = aggregate[DistanceRecord.DISTANCE_TOTAL]?.inMeters ?: 0.0,
+            activeCaloriesKcal = aggregate[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories ?: 0.0,
+            source = origins.sourceLabel(),
+            syncedAtEpochMs = syncedAt,
+        )
+    }
+
+    private suspend fun loadDailyHeart(
+        client: HealthConnectClient,
+        date: LocalDate,
+        start: Instant,
+        end: Instant,
+        syncedAt: Long,
+    ): DailyHeartSummaryEntity {
+        val records = readAllRecords(client, HeartRateRecord::class, start, end)
+        val samples = records.flatMap { record -> record.samples }
+        val bpms = samples.map { sample -> sample.beatsPerMinute }
+        val lastRecordAt = samples.maxOfOrNull { sample -> sample.time }
+
+        return DailyHeartSummaryEntity(
+            date = date.toString(),
+            sampleCount = samples.size,
+            minBpm = bpms.minOrNull(),
+            maxBpm = bpms.maxOrNull(),
+            avgBpm = bpms.takeIf { it.isNotEmpty() }?.average(),
+            source = records.origins().sourceLabel(),
+            lastRecordAtEpochMs = lastRecordAt?.toEpochMilli(),
+            syncedAtEpochMs = syncedAt,
+        )
+    }
+
+    private suspend fun loadDailySleep(
+        client: HealthConnectClient,
+        date: LocalDate,
+        start: Instant,
+        end: Instant,
+        syncedAt: Long,
+    ): DailySleepSummaryEntity {
+        val records = readAllRecords(client, SleepSessionRecord::class, start, end)
+        val totalMinutes = records.sumOf { record -> overlapMinutes(record.startTime, record.endTime, start, end) }
+        val lastRecordAt = records.maxOfOrNull { record -> record.endTime }
+
+        return DailySleepSummaryEntity(
+            date = date.toString(),
+            sessionCount = records.size,
+            totalSleepMinutes = totalMinutes,
+            source = records.origins().sourceLabel(),
+            lastRecordAtEpochMs = lastRecordAt?.toEpochMilli(),
+            syncedAtEpochMs = syncedAt,
+        )
+    }
+
+    private suspend fun loadDailyWorkouts(
+        client: HealthConnectClient,
+        date: LocalDate,
+        start: Instant,
+        end: Instant,
+        syncedAt: Long,
+    ): DailyWorkoutSummaryEntity {
+        val records = readAllRecords(client, ExerciseSessionRecord::class, start, end)
+        val totalMinutes = records.sumOf { record -> overlapMinutes(record.startTime, record.endTime, start, end) }
+        val lastRecordAt = records.maxOfOrNull { record -> record.endTime }
+
+        return DailyWorkoutSummaryEntity(
+            date = date.toString(),
+            sessionCount = records.size,
+            totalDurationMinutes = totalMinutes,
+            source = records.origins().sourceLabel(),
+            lastRecordAtEpochMs = lastRecordAt?.toEpochMilli(),
+            syncedAtEpochMs = syncedAt,
+        )
+    }
+
+    private suspend fun loadDailyBody(
+        client: HealthConnectClient,
+        date: LocalDate,
+        start: Instant,
+        end: Instant,
+        syncedAt: Long,
+    ): DailyBodySummaryEntity {
+        val weights = readAllRecords(client, WeightRecord::class, start, end)
+        val vo2Max = readAllRecords(client, Vo2MaxRecord::class, start, end)
+        val spo2 = readAllRecords(client, OxygenSaturationRecord::class, start, end)
+        val latestWeight = weights.maxByOrNull { record -> record.time }
+        val latestVo2 = vo2Max.maxByOrNull { record -> record.time }
+        val latestSpo2 = spo2.maxByOrNull { record -> record.time }
+        val lastRecordAt = listOfNotNull(
+            latestWeight?.time,
+            latestVo2?.time,
+            latestSpo2?.time,
+        ).maxOrNull()
+        val origins = weights.origins() + vo2Max.origins() + spo2.origins()
+
+        return DailyBodySummaryEntity(
+            date = date.toString(),
+            latestWeightKg = latestWeight?.weight?.inKilograms,
+            latestVo2Max = latestVo2?.vo2MillilitersPerMinuteKilogram,
+            latestSpo2Percent = latestSpo2?.percentage?.value,
+            weightRecordCount = weights.size,
+            vo2MaxRecordCount = vo2Max.size,
+            spo2RecordCount = spo2.size,
+            source = origins.sourceLabel(),
+            lastRecordAtEpochMs = lastRecordAt?.toEpochMilli(),
+            syncedAtEpochMs = syncedAt,
         )
     }
 
@@ -230,6 +407,28 @@ object HealthConnectDiagnosticsRepository {
         return count
     }
 
+    private suspend fun <T : Record> readAllRecords(
+        client: HealthConnectClient,
+        type: KClass<T>,
+        start: Instant,
+        end: Instant,
+    ): List<T> {
+        val records = mutableListOf<T>()
+        var pageToken: String? = null
+        do {
+            val response = client.readRecords(
+                ReadRecordsRequest(
+                    recordType = type,
+                    timeRangeFilter = TimeRangeFilter.between(start, end),
+                    pageToken = pageToken,
+                )
+            )
+            records += response.records
+            pageToken = response.pageToken
+        } while (pageToken != null)
+        return records
+    }
+
     private suspend fun readRecordSummary(
         client: HealthConnectClient,
         type: KClass<out Record>,
@@ -267,6 +466,21 @@ object HealthConnectDiagnosticsRepository {
         )
     }
 
+    private suspend fun VitaTraceDatabase.loadDailySyncSummary(): DailySyncSummary {
+        val dao = dailySummaryDao()
+        val lastSyncedAt = dao.lastSyncedAtEpochMs()
+            ?.let { epochMs -> Instant.ofEpochMilli(epochMs).formatLocal() }
+
+        return DailySyncSummary(
+            activityDays = dao.activityDays(),
+            heartDays = dao.heartDays(),
+            sleepDays = dao.sleepDays(),
+            workoutDays = dao.workoutDays(),
+            bodyDays = dao.bodyDays(),
+            lastSyncedAt = lastSyncedAt,
+        )
+    }
+
     private fun DataQualityItem.toSnapshot(capturedAt: Instant): HealthConnectQualitySnapshotEntity {
         return HealthConnectQualitySnapshotEntity(
             capturedAtEpochMs = capturedAt.toEpochMilli(),
@@ -295,6 +509,25 @@ object HealthConnectDiagnosticsRepository {
             is WeightRecord -> time
             else -> null
         }
+    }
+
+    private fun List<Record>.origins(): Set<String> {
+        return map { record -> record.metadata.dataOrigin.packageName }.toSet()
+    }
+
+    private fun Set<String>.sourceLabel(): String {
+        return if (isEmpty()) "none" else joinToString()
+    }
+
+    private fun overlapMinutes(
+        recordStart: Instant,
+        recordEnd: Instant,
+        dayStart: Instant,
+        dayEnd: Instant,
+    ): Long {
+        val start = maxOf(recordStart, dayStart)
+        val end = minOf(recordEnd, dayEnd)
+        return if (end.isAfter(start)) ChronoUnit.MINUTES.between(start, end) else 0L
     }
 
     private fun Instant.formatLocal(): String {

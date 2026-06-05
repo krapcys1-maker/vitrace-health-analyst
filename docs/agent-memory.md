@@ -46,6 +46,7 @@ Local Mi Fitness export summary:
 - Android app comes first. Desktop companion is planned later and should consume Android-exported aggregates.
 - Local database is the source of truth.
 - Android app now has an initial Room database (`vitrace.db`) with Health Connect quality snapshots.
+- Room now includes normalized daily summary tables for activity, heart, sleep, workouts, and body metrics.
 - AI is not the first milestone.
 - Future AI may use DeepSeek only with aggregated summaries and explicit user consent.
 - Future photo/scan imports need an architectural opening now, but OCR is not part of MVP.
@@ -59,18 +60,19 @@ Local Mi Fitness export summary:
 - Public agent instructions: `AGENTS.md`
 - Public clean project context: `docs/project-context.md`
 - Public Health Connect checklist: `docs/health-connect-live-data.md`
+- Public historical import plan: `docs/historical-data-import.md`
 - Public Android setup: `docs/android-setup.md`
 - Public desktop roadmap: `docs/desktop-roadmap.md`
 - Public living memory: `docs/agent-memory.md`
 
 ## Next Recommended Steps
 
-1. Turn Health Connect quality snapshots into a proper sync state screen with last successful sync and source reliability.
-2. Add normalized daily summary tables for activity, heart, sleep, workouts, and body metrics.
-3. Implement foreground Health Connect sync into those normalized tables.
-4. Sanitize and migrate useful content from `dokumentacja/` into public `docs/` files.
-5. Add fake/sample CSV fixtures that contain no private health data.
-6. Build parser and importer tests before importing the full private export.
+1. Add a real dashboard backed by local daily summaries.
+2. Add sample/sanitized CSV fixtures that contain no private health data.
+3. Build parser and importer tests before importing the full private export.
+4. Implement Mi Fitness historical import into the normalized daily summary tables.
+5. Turn Health Connect quality snapshots into a fuller source reliability screen.
+6. Add background sync after foreground sync remains stable.
 
 ## Work Log
 
@@ -83,6 +85,7 @@ Local Mi Fitness export summary:
 | 2026-06-05 | `vitrace/mvp-foundation` | Installed Android command-line tools, SDK Platform 36, Build-Tools, Platform-Tools/ADB; built debug APK. | APK generated at `app/build/outputs/apk/debug/app-debug.apk`. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Fixed Health Connect diagnostics: removed total/basal calories from the activity view and kept active calories only. | `:app:assembleDebug` passed; APK installed with ADB and screenshot verified. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Added Room and a Health Connect Data Quality screen that records per-metric 1/7/30-day counts, origins, and last record timestamps. | `:app:assembleDebug` passed; APK installed with ADB; screenshots/UI dump verified on device. |
+| 2026-06-05 | `vitrace/mvp-foundation` | Added normalized daily summary tables and foreground Health Connect sync for the last 30 days; documented historical import rules. | `:app:assembleDebug` passed; APK installed with ADB; UI verified on device with local daily summary counts. |
 
 ## Update Protocol
 

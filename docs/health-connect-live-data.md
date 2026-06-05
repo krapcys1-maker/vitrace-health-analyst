@@ -57,7 +57,8 @@ Current implementation:
 - The app reads 1/7/30-day counts for the MVP data types.
 - The app shows data origins and last available record timestamps.
 - Each refresh stores a data quality snapshot in the local Room database.
-- Full normalized daily sync tables are not implemented yet.
+- Each refresh now syncs the last 30 days into normalized daily Room tables for activity, heart, sleep, workouts, and body metrics.
+- Background sync is not implemented yet.
 
 ## Permissions And History
 
