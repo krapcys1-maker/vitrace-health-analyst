@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from analysis_rules import (
+    ActivitySleepGroup,
+    ActivitySleepThresholdResult,
     CREDIBLE_DAILY_HEART_FILTER_SQL,
     CREDIBLE_WALKING_FILTER_SQL,
     FITNESS_WALKING_FILTER_SQL,
@@ -21,6 +23,7 @@ from analysis_rules import (
     SleepWindowComparison,
     WalkingBandTrend,
     classify_activity_months,
+    compare_activity_sleep_thresholds,
     compare_sleep_window_to_baseline,
     compare_latest_walking_band_years,
 )
@@ -186,6 +189,7 @@ def deterministic_engine_facts(
         "activityOverTime": activity_over_time_facts(con, generated_for_date, steps_per_km),
         "walkingFitness": walking_fitness_facts(con, generated_for_date),
         "sleepBaseline": sleep_baseline_facts(con, generated_for_date),
+        "activitySleepThresholds": activity_sleep_threshold_facts(con, generated_for_date),
         "sleepAfterLongWalks": sleep_after_long_walks_facts(con, generated_for_date),
         "heartLoad": heart_load_facts(con, generated_for_date),
     }
@@ -487,6 +491,110 @@ def sleep_window_to_dict(window: SleepWindow) -> dict[str, Any]:
         "lightSleepMinutes": window.light_minutes,
         "awakeMinutes": window.awake_minutes,
         "sleepScore": window.score,
+    }
+
+
+def activity_sleep_threshold_facts(con: sqlite3.Connection, generated_for_date: str) -> dict[str, Any]:
+    try:
+        rows = list(
+            con.execute(
+                """
+                select a.steps as steps,
+                       s.totalSleepMinutes as totalSleepMinutes,
+                       s.remSleepMinutes as remSleepMinutes,
+                       s.deepSleepMinutes as deepSleepMinutes,
+                       s.sleepScore as sleepScore
+                from daily_activity_summaries a
+                join sleep_details s on date(a.date, '+1 day') = s.date
+                where a.date < ? and s.date < ? and a.steps > 0 and s.totalSleepMinutes > 0
+                """,
+                (generated_for_date, generated_for_date),
+            )
+        )
+    except sqlite3.OperationalError:
+        return {"available": False, "reason": "activity or sleep table unavailable"}
+
+    if len(rows) < 30:
+        return {
+            "available": False,
+            "reason": "too few activity-to-next-sleep pairs",
+            "pairs": len(rows),
+        }
+
+    step_values = sorted(int(row["steps"]) for row in rows)
+    low_threshold = step_values[len(step_values) // 4]
+    high_threshold = step_values[(len(step_values) * 3) // 4]
+    low_rows = [row for row in rows if int(row["steps"]) <= low_threshold]
+    high_rows = [row for row in rows if int(row["steps"]) >= high_threshold]
+    typical_rows = [
+        row for row in rows
+        if low_threshold < int(row["steps"]) < high_threshold
+    ]
+    result = compare_activity_sleep_thresholds(
+        activity_sleep_group("lowActivity", low_rows),
+        activity_sleep_group("typicalActivity", typical_rows),
+        activity_sleep_group("highActivity", high_rows),
+    )
+    return {
+        "available": True,
+        "closedDayRule": f"uses activity and sleep dates before {generated_for_date}",
+        "direction": "previous-day activity -> next measured sleep",
+        "pairs": len(rows),
+        "lowThresholdSteps": low_threshold,
+        "highThresholdSteps": high_threshold,
+        "result": activity_sleep_threshold_to_dict(result),
+        "interpretationGuard": "threshold comparison is observational; it does not prove causality",
+    }
+
+
+def activity_sleep_group(label: str, rows: list[sqlite3.Row]) -> ActivitySleepGroup:
+    steps = [int(row["steps"]) for row in rows if row["steps"] is not None]
+    return ActivitySleepGroup(
+        label=label,
+        days=len(rows),
+        min_steps=min(steps) if steps else None,
+        max_steps=max(steps) if steps else None,
+        avg_steps=round(sum(steps) / len(steps), 1) if steps else None,
+        total_minutes=rounded_average(rows, "totalSleepMinutes"),
+        rem_minutes=rounded_average(rows, "remSleepMinutes"),
+        deep_minutes=rounded_average(rows, "deepSleepMinutes"),
+        score=rounded_average(rows, "sleepScore"),
+    )
+
+
+def activity_sleep_threshold_to_dict(result: ActivitySleepThresholdResult) -> dict[str, Any]:
+    return {
+        "low": activity_sleep_group_to_dict(result.low),
+        "typical": activity_sleep_group_to_dict(result.typical),
+        "high": activity_sleep_group_to_dict(result.high),
+        "confidence": result.confidence,
+        "highVsTypicalDeltas": {
+            "totalSleepMinutes": result.high_total_minutes_delta,
+            "remSleepMinutes": result.high_rem_minutes_delta,
+            "deepSleepMinutes": result.high_deep_minutes_delta,
+            "sleepScore": result.high_score_delta,
+        },
+        "lowVsTypicalDeltas": {
+            "totalSleepMinutes": result.low_total_minutes_delta,
+            "remSleepMinutes": result.low_rem_minutes_delta,
+            "deepSleepMinutes": result.low_deep_minutes_delta,
+            "sleepScore": result.low_score_delta,
+        },
+        "interpretation": result.interpretation,
+    }
+
+
+def activity_sleep_group_to_dict(group: ActivitySleepGroup) -> dict[str, Any]:
+    return {
+        "label": group.label,
+        "days": group.days,
+        "minSteps": group.min_steps,
+        "maxSteps": group.max_steps,
+        "avgSteps": group.avg_steps,
+        "totalSleepMinutes": group.total_minutes,
+        "remSleepMinutes": group.rem_minutes,
+        "deepSleepMinutes": group.deep_minutes,
+        "sleepScore": group.score,
     }
 
 

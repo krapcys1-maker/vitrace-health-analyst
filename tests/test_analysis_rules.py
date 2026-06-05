@@ -4,9 +4,11 @@ import unittest
 
 from tools.analysis_rules import (
     ActivityMonth,
+    ActivitySleepGroup,
     SleepWindow,
     WalkingBandYear,
     classify_activity_months,
+    compare_activity_sleep_thresholds,
     compare_sleep_window_to_baseline,
     compare_latest_walking_band_years,
     evaluate_walking_session,
@@ -171,6 +173,31 @@ class SleepWindowComparisonTest(unittest.TestCase):
 
         self.assertEqual(comparison.confidence, "Insufficient")
         self.assertIn("za mala probka", comparison.interpretation)
+
+
+class ActivitySleepThresholdTest(unittest.TestCase):
+    def test_detects_high_activity_cost_on_next_sleep(self) -> None:
+        result = compare_activity_sleep_thresholds(
+            ActivitySleepGroup("low", 30, 1000, 5000, 3500.0, 430.0, 75.0, 60.0, 73.0),
+            ActivitySleepGroup("typical", 40, 5001, 12000, 8500.0, 420.0, 70.0, 58.0, 72.0),
+            ActivitySleepGroup("high", 30, 12001, 25000, 17000.0, 385.0, 55.0, 62.0, 66.0),
+        )
+
+        self.assertEqual(result.confidence, "High")
+        self.assertEqual(result.high_total_minutes_delta, -35.0)
+        self.assertEqual(result.high_rem_minutes_delta, -15.0)
+        self.assertEqual(result.high_score_delta, -6.0)
+        self.assertIn("moze pogarszac regeneracje", result.interpretation)
+
+    def test_marks_activity_sleep_threshold_insufficient(self) -> None:
+        result = compare_activity_sleep_thresholds(
+            ActivitySleepGroup("low", 3, 1000, 5000, 3500.0, 430.0, 75.0, 60.0, 73.0),
+            ActivitySleepGroup("typical", 40, 5001, 12000, 8500.0, 420.0, 70.0, 58.0, 72.0),
+            ActivitySleepGroup("high", 30, 12001, 25000, 17000.0, 385.0, 55.0, 62.0, 66.0),
+        )
+
+        self.assertEqual(result.confidence, "Insufficient")
+        self.assertIn("za mala probka", result.interpretation)
 
 
 if __name__ == "__main__":

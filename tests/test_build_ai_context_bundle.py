@@ -68,6 +68,9 @@ class BuildAiContextBundleCliTest(unittest.TestCase):
         self.assertEqual(sleep_baseline["comparisons"][0]["window"]["label"], "last7")
         self.assertEqual(sleep_baseline["comparisons"][0]["confidence"], "Insufficient")
         self.assertIn("wearable sleep stages", sleep_baseline["interpretationGuard"])
+        activity_sleep = bundle["engineFacts"]["activitySleepThresholds"]
+        self.assertFalse(activity_sleep["available"])
+        self.assertEqual(activity_sleep["pairs"], 1)
         sleep_after_walks = bundle["engineFacts"]["sleepAfterLongWalks"]
         self.assertEqual(sleep_after_walks["thresholdKm"], 8.0)
         self.assertEqual(sleep_after_walks["longWalkSleep"]["days"], 1)

@@ -110,6 +110,36 @@ class SleepWindowComparison:
     interpretation: str
 
 
+@dataclass(frozen=True)
+class ActivitySleepGroup:
+    label: str
+    days: int
+    min_steps: int | None
+    max_steps: int | None
+    avg_steps: float | None
+    total_minutes: float | None
+    rem_minutes: float | None
+    deep_minutes: float | None
+    score: float | None
+
+
+@dataclass(frozen=True)
+class ActivitySleepThresholdResult:
+    low: ActivitySleepGroup
+    typical: ActivitySleepGroup
+    high: ActivitySleepGroup
+    confidence: str
+    high_total_minutes_delta: float | None
+    high_rem_minutes_delta: float | None
+    high_deep_minutes_delta: float | None
+    high_score_delta: float | None
+    low_total_minutes_delta: float | None
+    low_rem_minutes_delta: float | None
+    low_deep_minutes_delta: float | None
+    low_score_delta: float | None
+    interpretation: str
+
+
 def classify_activity_months(
     months: list[ActivityMonth],
     *,
@@ -382,6 +412,104 @@ def sleep_window_interpretation(
     if strong_parts:
         return "lepsza regeneracja vs baseline: " + "; ".join(strong_parts)
     return "blisko baseline, bez duzej zmiany"
+
+
+def compare_activity_sleep_thresholds(
+    low: ActivitySleepGroup,
+    typical: ActivitySleepGroup,
+    high: ActivitySleepGroup,
+    *,
+    min_group_days: int = 10,
+) -> ActivitySleepThresholdResult:
+    high_deltas = sleep_group_deltas(high, typical)
+    low_deltas = sleep_group_deltas(low, typical)
+    confidence = activity_sleep_threshold_confidence(low, typical, high, min_group_days=min_group_days)
+    return ActivitySleepThresholdResult(
+        low=low,
+        typical=typical,
+        high=high,
+        confidence=confidence,
+        high_total_minutes_delta=high_deltas["total_minutes"],
+        high_rem_minutes_delta=high_deltas["rem_minutes"],
+        high_deep_minutes_delta=high_deltas["deep_minutes"],
+        high_score_delta=high_deltas["score"],
+        low_total_minutes_delta=low_deltas["total_minutes"],
+        low_rem_minutes_delta=low_deltas["rem_minutes"],
+        low_deep_minutes_delta=low_deltas["deep_minutes"],
+        low_score_delta=low_deltas["score"],
+        interpretation=activity_sleep_threshold_interpretation(confidence, high_deltas, low_deltas),
+    )
+
+
+def sleep_group_deltas(
+    group: ActivitySleepGroup,
+    typical: ActivitySleepGroup,
+) -> dict[str, float | None]:
+    return {
+        "total_minutes": numeric_delta(group.total_minutes, typical.total_minutes),
+        "rem_minutes": numeric_delta(group.rem_minutes, typical.rem_minutes),
+        "deep_minutes": numeric_delta(group.deep_minutes, typical.deep_minutes),
+        "score": numeric_delta(group.score, typical.score),
+    }
+
+
+def activity_sleep_threshold_confidence(
+    low: ActivitySleepGroup,
+    typical: ActivitySleepGroup,
+    high: ActivitySleepGroup,
+    *,
+    min_group_days: int,
+) -> str:
+    if min(low.days, typical.days, high.days) < min_group_days:
+        return "Insufficient"
+    if min(low.days, typical.days, high.days) >= 25:
+        return "High"
+    if min(low.days, typical.days, high.days) >= 15:
+        return "Medium"
+    return "Low"
+
+
+def activity_sleep_threshold_interpretation(
+    confidence: str,
+    high_deltas: dict[str, float | None],
+    low_deltas: dict[str, float | None],
+) -> str:
+    if confidence == "Insufficient":
+        return "za mala probka w jednym z progow aktywnosci"
+
+    high_total = high_deltas["total_minutes"]
+    high_rem = high_deltas["rem_minutes"]
+    high_deep = high_deltas["deep_minutes"]
+    high_score = high_deltas["score"]
+    low_total = low_deltas["total_minutes"]
+    low_score = low_deltas["score"]
+
+    high_weaker = []
+    high_better = []
+    if high_total is not None:
+        if high_total <= -20:
+            high_weaker.append("po wysokim ruchu sen jest krotszy")
+        elif high_total >= 20:
+            high_better.append("po wysokim ruchu sen jest dluzszy")
+    if high_score is not None:
+        if high_score <= -3:
+            high_weaker.append("score jest nizszy")
+        elif high_score >= 3:
+            high_better.append("score jest wyzszy")
+    if high_rem is not None and high_rem <= -10:
+        high_weaker.append("REM jest nizszy")
+    if high_deep is not None and high_deep >= 10:
+        high_better.append("gleboki sen jest wyzszy")
+
+    if high_weaker and high_better:
+        return "wysoki ruch daje mieszany sygnal: " + "; ".join(high_weaker + high_better)
+    if high_weaker:
+        return "wysoki ruch poprzedniego dnia moze pogarszac regeneracje: " + "; ".join(high_weaker)
+    if high_better:
+        return "wysoki ruch poprzedniego dnia moze pomagac regeneracji: " + "; ".join(high_better)
+    if low_total is not None and low_score is not None and low_total >= 15 and low_score >= 2:
+        return "nizszy ruch wyglada lepiej niz typowy dzien, ale bez mocnego efektu wysokiego ruchu"
+    return "brak wyraznej roznicy miedzy progami aktywnosci"
 
 
 def walking_band_year_from_row(row: object) -> WalkingBandYear:
