@@ -33,6 +33,7 @@ from analysis_rules import (
     compare_sleep_window_to_baseline,
     compare_latest_walking_band_years,
 )
+from insight_ranker import rank_top_findings
 
 
 DEFAULT_DB = Path("build/phone-db-check/phone-current-vitrace.db")
@@ -75,6 +76,11 @@ def build_bundle(con: sqlite3.Connection, db_path: Path, generated_for_date: str
     insights = current_tested_insights(con)
     coverage = data_coverage(con, generated_for_date)
     engine_facts = deterministic_engine_facts(con, generated_for_date, profile)
+    ranked_findings = rank_top_findings(
+        engine_facts,
+        deterministic_insights=insights,
+        limit=5,
+    )
     return {
         "schemaVersion": SCHEMA_VERSION,
         "generatedForDate": generated_for_date,
@@ -91,6 +97,7 @@ def build_bundle(con: sqlite3.Connection, db_path: Path, generated_for_date: str
         "researchRules": research_rules(),
         "engineFacts": engine_facts,
         "deterministicInsights": insights,
+        "rankedFindings": ranked_findings,
         "aiRole": ai_role(),
         "forbiddenConclusions": forbidden_conclusions(),
         "expectedOutput": expected_output(),
@@ -1005,7 +1012,7 @@ def expected_output() -> dict[str, Any]:
     return {
         "language": "Polish, plain, direct, non-technical",
         "format": [
-            "topFindings: 3-5 short findings with confidence",
+            "topFindings: 3-5 short findings with confidence; start from rankedFindings unless you have a clear reason to reorder",
             "whatChanged: trend changes worth showing in the app",
             "whatIsWeak: unsupported or low-confidence claims",
             "nextTests: concrete data tests to run next",

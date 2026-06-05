@@ -50,7 +50,7 @@ AI owns only explanation:
 - how strong or weak the evidence is
 - which data is missing
 - what the user can test next
-- which 3-5 findings deserve the main screen
+- how to refine the deterministic `rankedFindings` list into final wording
 - how to write those findings without sync/API/database language
 
 ## Exact AI Insertion Point
@@ -117,6 +117,8 @@ AI output should be structured, not a long chatty paragraph:
   "mainScreenCopy": []
 }
 ```
+
+The deterministic bundle already contains `rankedFindings`. AI should normally start from that order, then improve wording and call out weak evidence. AI should not invent a new top finding from raw data.
 
 The app should store AI outputs separately from deterministic `analysis_results`, with provider, model, input bundle hash, generated date, and user-visible text. Do not overwrite deterministic insights.
 

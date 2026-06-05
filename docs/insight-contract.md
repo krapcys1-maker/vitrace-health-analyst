@@ -31,6 +31,29 @@ Every visible insight must contain:
 No card is allowed to show only raw record counts as the main point.
 No main-screen card should use sync/API/provider/source wording.
 
+## Main Screen Ranking
+
+The main screen should not render every available insight. It should start from deterministic `rankedFindings`:
+
+- `id`
+- `domain`
+- `title`
+- `message`
+- `whyItMatters`
+- `confidence`
+- `priorityScore`
+- `evidence`
+- `limitations`
+- `nextStep`
+
+Ranking rules:
+
+- prefer medium/high-confidence findings with a real effect size
+- keep low-confidence findings as monitoring candidates, not top claims
+- avoid repeated cards from the same analytical family, for example multiple sleep-baseline windows or multiple walking distance bands
+- keep technical data coverage internal unless it gates a visible claim
+- AI may rewrite wording, but should not invent a top finding outside deterministic evidence
+
 ## Strong Signals In The Current Data
 
 Use these as primary analytical surfaces:

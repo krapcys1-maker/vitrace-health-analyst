@@ -22,6 +22,9 @@ deterministic metric engines
 tested insights
         |
         v
+ranked findings
+        |
+        v
 AI context bundle
         |
         v
@@ -164,6 +167,7 @@ The bundle includes:
 - activity/workout sleep-load facts so AI separates high daily steps from long walking-session recovery cost
 - heart-load activity split facts so AI separates high average daily HR after activity from high average daily HR without large activity
 - deterministic insights
+- deterministic `rankedFindings`: 3-5 prioritized candidates for the main screen, with confidence, evidence, limitation, priority score, and next test
 - confidence
 - limitations
 - next tests

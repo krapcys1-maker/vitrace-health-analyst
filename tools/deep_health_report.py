@@ -33,6 +33,9 @@ from analysis_rules import (
     compare_sleep_window_to_baseline,
     compare_latest_walking_band_years,
 )
+from build_ai_context_bundle import deterministic_engine_facts as ai_engine_facts
+from build_ai_context_bundle import user_profile as ai_user_profile
+from insight_ranker import rank_top_findings
 
 
 DEFAULT_DB = Path("build/phone-db-check/phone-current-vitrace.db")
@@ -81,6 +84,10 @@ def build_report(con: sqlite3.Connection, db_path: Path, cutoff_date: str) -> st
     sleep_window_comparisons = compare_sleep_windows(sleep_windows)
     heart = heart_context(con, cutoff_date)
     coverage = data_coverage(con, cutoff_date)
+    ranked_findings = rank_top_findings(
+        ai_engine_facts(con, cutoff_date, ai_user_profile(con)),
+        limit=5,
+    )
 
     lines: list[str] = [
         "# VitaTrace Body Intelligence Report",
@@ -94,6 +101,7 @@ def build_report(con: sqlite3.Connection, db_path: Path, cutoff_date: str) -> st
         "",
     ]
 
+    lines.extend(ranked_findings_section(ranked_findings))
     lines.extend(executive_findings(activity_years, activity_months, walking_years, fitness_walking_years, walking_band_trends, running, sleep_activity, activity_sleep_thresholds, activity_workout_sleep_load, long_walk_sleep, sleep_windows, sleep_window_comparisons, heart, steps_per_km))
     lines.extend(coverage_section(coverage))
     lines.extend(activity_section(activity_years, activity_months, steps_per_km))
@@ -105,6 +113,33 @@ def build_report(con: sqlite3.Connection, db_path: Path, cutoff_date: str) -> st
     lines.extend(reference_section())
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def ranked_findings_section(findings: list[dict[str, object]]) -> list[str]:
+    lines = [
+        "## Ranking: co powinno wejsc na pierwszy ekran",
+        "",
+        "To jest deterministyczny ranking kandydatow, zanim AI napisze wersje ladna po ludzku.",
+        "",
+    ]
+    if not findings:
+        lines.extend([
+            "Brak wystarczajaco mocnych kandydatow. Najpierw trzeba poprawic silnik albo pokrycie danych.",
+            "",
+        ])
+        return lines
+
+    for index, finding in enumerate(findings, start=1):
+        lines.extend([
+            f"{index}. **{finding.get('title')}**",
+            f"   - Obszar: {finding.get('domain')}; pewnosc: {confidence_pl(str(finding.get('confidence')))}; priorytet: {finding.get('priorityScore')}",
+            f"   - Wniosek: {finding.get('message')}",
+            f"   - Dlaczego wazne: {finding.get('whyItMatters')}",
+            f"   - Dowod: {first_evidence(finding)}",
+            f"   - Nastepny test: {finding.get('nextStep')}",
+            "",
+        ])
+    return lines
 
 
 def executive_findings(
@@ -1392,6 +1427,13 @@ def confidence_pl(value: str) -> str:
         "Low": "niska",
         "Insufficient": "za mala probka",
     }.get(value, value)
+
+
+def first_evidence(finding: dict[str, object]) -> str:
+    evidence = finding.get("evidence")
+    if not isinstance(evidence, list) or not evidence:
+        return "brak"
+    return "; ".join(str(item) for item in evidence[:2])
 
 
 if __name__ == "__main__":
