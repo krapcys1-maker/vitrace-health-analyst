@@ -65,6 +65,7 @@ Local Mi Fitness export summary:
 - Mi Fitness historical activity totals must use `hlth_center_aggregated_fitness_data.csv` `daily_report/steps`. Raw `hlth_center_fitness_data.csv` step rows across multiple `Sid` values double-count phone and wearable sources, and raw-only step days can make monthly/yearly totals disagree with Mi Fitness.
 - Do not mark history import correct until `tools/audit_mifitness_import.py` reports 0 bad activity days, 0 bad months, 0 bad years, and 0 extra positive activity days.
 - Latest verified history audit: 1,031 canonical activity days, 46 months, 6 years, all matching; 2024-09 = 325,587 steps; 2025 = 3,191,192 steps; best month = 2026-04 with 559,104 steps.
+- Latest live-vs-history comparison: Health Connect is connected but much poorer than the Mi Fitness export on 2026-06-05. Live has current steps/activity/heart/exercise records, but 0 Health Connect sleep, SpO2, VO2 max, and weight records in the latest 30-day quality snapshot. Keep Mi Fitness export as historical baseline and Health Connect as live/freshness source.
 
 ## Important Local Paths
 
@@ -78,6 +79,7 @@ Local Mi Fitness export summary:
 - Public desktop roadmap: `docs/desktop-roadmap.md`
 - Public analytics product plan: `docs/analytics-product-plan.md`
 - Public Personal Body Intelligence prompt: `docs/personal-body-intelligence-prompt.md`
+- Public data source comparison: `docs/data-source-comparison.md`
 - Public local importer tool: `tools/import_mifitness_history_to_db.py`
 - Public local import audit tool: `tools/audit_mifitness_import.py`
 - Public living memory: `docs/agent-memory.md`
@@ -114,6 +116,7 @@ Local Mi Fitness export summary:
 | 2026-06-05 | `vitrace/mvp-foundation` | Added user profile table, long-term activity summaries, local Mi Fitness history importer, and imported private history into the phone database. | `:app:assembleDebug` passed; importer reported 984 daily rows; APK installed; Start, Analysis, and Profile screenshots verified; Health Connect sync kept imported history intact. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Fixed historical step import to use Mi Fitness daily reports instead of summing raw multi-source step rows. | Importer rerun; September 2024 changed from incorrect 611,046 raw steps to canonical 325,587 steps; phone database updated and Analysis screenshot verified. |
 | 2026-06-05 | `vitrace/mvp-foundation` | Added repeatable Mi Fitness import auditor and made historical heart, sleep, and SpO2 prefer canonical daily reports. Disabled raw step fallback so monthly/yearly totals match Mi Fitness. | `python -m py_compile tools/import_mifitness_history_to_db.py tools/audit_mifitness_import.py` passed; audit passed with activity daily_bad=0, month_bad=0, year_bad=0, extra_positive_days=0; heart/sleep/SpO2/workouts had 0 canonical mismatches. |
+| 2026-06-05 | `vitrace/mvp-foundation` | Compared Mi Fitness historical import with current Health Connect live data and documented source coverage. | Manual Health Connect sync from phone UI; pulled phone DB; latest snapshot showed live steps/activity/heart/exercise only, with sleep/SpO2/VO2/weight all 0 in Health Connect. |
 
 ## Update Protocol
 
