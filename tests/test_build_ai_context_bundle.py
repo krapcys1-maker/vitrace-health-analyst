@@ -48,14 +48,22 @@ class BuildAiContextBundleCliTest(unittest.TestCase):
         self.assertFalse(bundle["source"]["rawDataIncluded"])
         self.assertFalse(bundle["source"]["routeDataIncluded"])
         self.assertEqual(bundle["profile"]["ageYears"], 40)
-        self.assertEqual(bundle["dataCoverage"]["activityDays"], 2)
+        self.assertEqual(bundle["dataCoverage"]["activityDays"], 102)
         self.assertEqual(bundle["dataCoverage"]["sleepDetailNights"], 1)
         self.assertEqual(bundle["deterministicInsights"][0]["id"], "long_term_steps_km")
+        self.assertEqual(bundle["engineFacts"]["activityOverTime"]["stepsPerKm"], 1250)
+        self.assertEqual(bundle["engineFacts"]["activityOverTime"]["bestRecentMonth"]["period"], "2026-04")
+        self.assertEqual(bundle["engineFacts"]["activityOverTime"]["bestRecentMonth"]["signal"], "peak")
+        self.assertNotIn("999999", json.dumps(bundle["engineFacts"], ensure_ascii=True))
+        self.assertEqual(bundle["engineFacts"]["walkingFitness"]["years"][0]["period"], "2026")
+        self.assertEqual(bundle["engineFacts"]["walkingFitness"]["years"][0]["sessions"], 1)
         self.assertIn("2026-06-05 as partial", bundle["source"]["closedDayRule"])
         self.assertIn("Do not diagnose", prompt)
         self.assertIn("Do not mention sync", prompt)
         self.assertIn("mainScreenCopy", prompt)
         self.assertNotIn("rawPayloadJson", prompt)
+        self.assertNotIn("GPX", prompt)
+        self.assertNotIn("private-route.gpx", prompt)
 
 
 def create_fixture_db(db_path: Path) -> None:
@@ -190,17 +198,32 @@ def create_fixture_db(db_path: Path) -> None:
             VALUES (1, 'male', 40, 186, 88.0, 1250, 'fixture', 1)
             """
         )
+        activity_rows = []
+        for year_month, daily_steps in [
+            ("2025-12", 10_000),
+            ("2026-01", 10_000),
+            ("2026-02", 10_000),
+            ("2026-03", 10_000),
+            ("2026-04", 20_000),
+        ]:
+            for day in range(1, 21):
+                activity_rows.append(
+                    (f"{year_month}-{day:02d}", daily_steps, float(daily_steps) * 0.8, 250.0)
+                )
+        activity_rows.extend(
+            [
+                ("2026-06-01", 8000, 6400.0, 250.0),
+                ("2026-06-02", 10000, 8000.0, 320.0),
+                ("2026-06-05", 999999, 999999.0, 999.0),
+            ]
+        )
         con.executemany(
             """
             INSERT INTO daily_activity_summaries
             (date, steps, distanceMeters, activeCaloriesKcal, source, syncedAtEpochMs)
             VALUES (?, ?, ?, ?, 'fixture', 1)
             """,
-            [
-                ("2026-06-01", 8000, 6400.0, 250.0),
-                ("2026-06-02", 10000, 8000.0, 320.0),
-                ("2026-06-05", 999999, 999999.0, 999.0),
-            ],
+            activity_rows,
         )
         con.execute(
             """

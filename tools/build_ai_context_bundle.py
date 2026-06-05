@@ -10,6 +10,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from analysis_rules import (
+    FITNESS_WALKING_FILTER_SQL,
+    ActivityMonth,
+    classify_activity_months,
+)
+
 
 DEFAULT_DB = Path("build/phone-db-check/phone-current-vitrace.db")
 DEFAULT_JSON_OUTPUT = Path("build/ai-context-bundle.json")
@@ -50,6 +56,7 @@ def build_bundle(con: sqlite3.Connection, db_path: Path, generated_for_date: str
     profile = user_profile(con)
     insights = current_tested_insights(con)
     coverage = data_coverage(con, generated_for_date)
+    engine_facts = deterministic_engine_facts(con, generated_for_date, profile)
     return {
         "schemaVersion": SCHEMA_VERSION,
         "generatedForDate": generated_for_date,
@@ -64,6 +71,7 @@ def build_bundle(con: sqlite3.Connection, db_path: Path, generated_for_date: str
         "profile": profile,
         "dataCoverage": coverage,
         "researchRules": research_rules(),
+        "engineFacts": engine_facts,
         "deterministicInsights": insights,
         "aiRole": ai_role(),
         "forbiddenConclusions": forbidden_conclusions(),
@@ -147,16 +155,185 @@ def current_tested_insights(con: sqlite3.Connection) -> list[dict[str, Any]]:
                 "id": result.get("id", row["scope"]),
                 "domain": result.get("domain", "Unknown"),
                 "title": result.get("title", row["summaryTitle"]),
-                "answer": result.get("answer", row["summaryText"]),
+                "answer": sanitize_ai_text(result.get("answer", row["summaryText"])),
                 "confidence": row["confidence"],
                 "sampleSize": int(row["sampleSize"]),
                 "dateRange": result.get("dateRange"),
-                "evidence": keep_string_list(result.get("evidence")),
-                "limitations": keep_string_list(result.get("limitations")),
-                "nextStep": result.get("nextStep"),
+                "evidence": [sanitize_ai_text(item) for item in keep_string_list(result.get("evidence"))],
+                "limitations": [sanitize_ai_text(item) for item in keep_string_list(result.get("limitations"))],
+                "nextStep": sanitize_ai_text(result.get("nextStep")),
             }
         )
     return insights
+
+
+def deterministic_engine_facts(
+    con: sqlite3.Connection,
+    generated_for_date: str,
+    profile: dict[str, Any],
+) -> dict[str, Any]:
+    steps_per_km = int(profile.get("stepsPerKm") or 1250) if profile.get("available") else 1250
+    return {
+        "activityOverTime": activity_over_time_facts(con, generated_for_date, steps_per_km),
+        "walkingFitness": walking_fitness_facts(con, generated_for_date),
+    }
+
+
+def activity_over_time_facts(
+    con: sqlite3.Connection,
+    generated_for_date: str,
+    steps_per_km: int,
+) -> dict[str, Any]:
+    try:
+        month_rows = list(
+            con.execute(
+                """
+                select substr(date, 1, 7) as period,
+                       count(*) as days,
+                       sum(steps) as steps,
+                       avg(steps) as avgSteps
+                from daily_activity_summaries
+                where date < ? and (steps > 0 or distanceMeters > 0 or activeCaloriesKcal > 0)
+                group by period
+                order by period
+                """,
+                (generated_for_date,),
+            )
+        )
+        year_rows = list(
+            con.execute(
+                """
+                select substr(date, 1, 4) as period,
+                       count(*) as days,
+                       sum(steps) as steps,
+                       avg(steps) as avgSteps
+                from daily_activity_summaries
+                where date < ? and (steps > 0 or distanceMeters > 0 or activeCaloriesKcal > 0)
+                group by period
+                order by period
+                """,
+                (generated_for_date,),
+            )
+        )
+    except sqlite3.OperationalError:
+        return {"available": False, "reason": "activity tables unavailable"}
+
+    months = [
+        ActivityMonth(
+            period=row["period"],
+            days=int(row["days"] or 0),
+            steps=int(row["steps"] or 0),
+        )
+        for row in month_rows
+    ]
+    signals = classify_activity_months(months)
+    monthly_signals = []
+    for row in month_rows[-18:]:
+        signal = signals.get(row["period"])
+        monthly_signals.append(
+            {
+                "period": row["period"],
+                "days": int(row["days"] or 0),
+                "steps": int(row["steps"] or 0),
+                "avgSteps": round(float(row["avgSteps"] or 0), 1),
+                "estimatedKm": round(float(row["steps"] or 0) / steps_per_km, 1),
+                "signal": signal.label if signal else "unknown",
+                "ratioToBaseline": round(signal.ratio_to_baseline, 2) if signal and signal.ratio_to_baseline is not None else None,
+                "reason": signal.reason if signal else "no signal",
+            }
+        )
+
+    notable = [
+        item
+        for item in monthly_signals
+        if item["signal"] in {"peak", "slump", "above_baseline", "below_baseline"}
+    ]
+    best_month = max(monthly_signals, key=lambda item: item["steps"], default=None)
+    years = [
+        {
+            "period": row["period"],
+            "days": int(row["days"] or 0),
+            "steps": int(row["steps"] or 0),
+            "avgSteps": round(float(row["avgSteps"] or 0), 1),
+            "estimatedKm": round(float(row["steps"] or 0) / steps_per_km, 1),
+        }
+        for row in year_rows
+    ]
+
+    return {
+        "available": bool(month_rows),
+        "closedDayRule": f"uses dates before {generated_for_date}",
+        "stepsPerKm": steps_per_km,
+        "years": years,
+        "monthlySignals": monthly_signals,
+        "notableRecentMonths": notable,
+        "bestRecentMonth": best_month,
+    }
+
+
+def walking_fitness_facts(con: sqlite3.Connection, generated_for_date: str) -> dict[str, Any]:
+    try:
+        rows = list(
+            con.execute(
+                f"""
+                select substr(date, 1, 4) as period,
+                       count(*) as sessions,
+                       sum(distanceMeters) / 1000.0 as km,
+                       avg(avgPaceSecondsPerKm) as paceSecondsPerKm,
+                       avg(avgHeartRateBpm) as avgHeartRateBpm,
+                       avg(activeCaloriesKcal / nullif(distanceMeters / 1000.0, 0)) as kcalPerKm,
+                       avg(vo2Max) as vo2
+                from workout_sessions
+                where date < ? and {FITNESS_WALKING_FILTER_SQL}
+                group by period
+                order by period
+                """,
+                (generated_for_date,),
+            )
+        )
+    except sqlite3.OperationalError:
+        return {"available": False, "reason": "workout tables unavailable"}
+
+    years = [
+        {
+            "period": row["period"],
+            "sessions": int(row["sessions"] or 0),
+            "km": round(float(row["km"] or 0), 1),
+            "paceSecondsPerKm": round(float(row["paceSecondsPerKm"]), 1) if row["paceSecondsPerKm"] is not None else None,
+            "avgHeartRateBpm": round(float(row["avgHeartRateBpm"]), 1) if row["avgHeartRateBpm"] is not None else None,
+            "kcalPerKm": round(float(row["kcalPerKm"]), 1) if row["kcalPerKm"] is not None else None,
+            "vo2": round(float(row["vo2"]), 1) if row["vo2"] is not None else None,
+        }
+        for row in rows
+    ]
+    latest = years[-1] if years else None
+    previous = years[-2] if len(years) >= 2 else None
+    return {
+        "available": bool(years),
+        "closedDayRule": f"uses dates before {generated_for_date}",
+        "filter": "walking 3-15 km, duration 10 min - 4 h, pace 8-25 min/km",
+        "years": years,
+        "latestVsPrevious": walking_delta(latest, previous),
+    }
+
+
+def walking_delta(current: dict[str, Any] | None, previous: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not current or not previous:
+        return None
+    return {
+        "currentPeriod": current["period"],
+        "previousPeriod": previous["period"],
+        "paceSecondsPerKmDelta": numeric_delta(current.get("paceSecondsPerKm"), previous.get("paceSecondsPerKm")),
+        "avgHeartRateBpmDelta": numeric_delta(current.get("avgHeartRateBpm"), previous.get("avgHeartRateBpm")),
+        "kcalPerKmDelta": numeric_delta(current.get("kcalPerKm"), previous.get("kcalPerKm")),
+        "vo2Delta": numeric_delta(current.get("vo2"), previous.get("vo2")),
+    }
+
+
+def numeric_delta(current: object, previous: object) -> float | None:
+    if current is None or previous is None:
+        return None
+    return round(float(current) - float(previous), 1)
 
 
 def research_rules() -> dict[str, list[str]]:
@@ -294,6 +471,20 @@ def keep_string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def sanitize_ai_text(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    replacements = {
+        "GPX": "podobne trasy",
+        "gpx": "podobne trasy",
+        "rawPayloadJson": "usuniete dane surowe",
+    }
+    text = value
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text
 
 
 if __name__ == "__main__":

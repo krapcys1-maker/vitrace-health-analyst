@@ -144,6 +144,7 @@ The bundle includes:
 - profile basics
 - source-safe coverage numbers
 - research rules
+- deterministic `engineFacts`: activity peak/slump labels, yearly/monthly km, and filtered walking-fitness facts
 - deterministic insights
 - confidence
 - limitations
