@@ -9,7 +9,8 @@ Read these files in order before making changes:
 1. `README.md`
 2. `docs/agent-memory.md`
 3. `docs/project-context.md`
-4. Local private docs in `dokumentacja/` only when needed and only on this machine.
+4. `docs/insight-contract.md`
+5. Local private docs in `dokumentacja/` only when needed and only on this machine.
 
 Current working branch: `vitrace/mvp-foundation`.
 
@@ -21,6 +22,7 @@ Work like a careful health data analyst, not like a fast demo builder.
 - Keep health data private by default.
 - Prefer deterministic calculations before AI interpretation.
 - Build small, testable layers.
+- Treat `docs/insight-contract.md` as the current product/analytics contract when older plans disagree.
 - Record decisions and progress in `docs/agent-memory.md`.
 - If something is uncertain, prove it with a small check or mark it as an assumption.
 
@@ -81,4 +83,3 @@ Minimum tests expected as the app grows:
 - AI reporter tests proving prompts contain only aggregated metrics.
 
 No feature is considered done until it has either automated tests or a documented reason why it cannot yet be tested.
-

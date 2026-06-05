@@ -13,8 +13,8 @@ New coding sessions should start with:
 1. `AGENTS.md`
 2. `docs/agent-memory.md`
 3. `docs/project-context.md`
-4. `docs/analytics-product-plan.md`
-5. `docs/personal-body-intelligence-prompt.md`
+4. `docs/insight-contract.md`
+5. `docs/insight-research-reset.md`
 6. `docs/health-connect-live-data.md`
 7. `docs/android-setup.md`
 
