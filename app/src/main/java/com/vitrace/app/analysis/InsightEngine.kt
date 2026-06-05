@@ -1,5 +1,6 @@
 package com.vitrace.app.analysis
 
+import com.vitrace.app.data.AnalysisResultEntity
 import com.vitrace.app.data.SleepActivityFeatureRow
 import com.vitrace.app.data.SleepNextDayActivityRow
 import com.vitrace.app.data.TrainingSleepAggregate
@@ -11,6 +12,10 @@ import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.math.abs
 import kotlin.math.sqrt
+
+private const val TESTED_INSIGHT_ANALYSIS_TYPE = "tested_insight"
+private const val TESTED_INSIGHT_ENGINE_VERSION = "tested_insight_v1"
+private const val TESTED_INSIGHT_RETENTION = 10
 
 data class TestedInsight(
     val id: String,
@@ -26,6 +31,30 @@ data class TestedInsight(
 )
 
 object InsightEngine {
+    suspend fun buildAndPersistCurrent(
+        database: VitaTraceDatabase,
+        profile: UserProfileEntity,
+        now: Instant = Instant.now(),
+    ): List<TestedInsight> {
+        val insights = build(database, profile, now)
+        val dao = database.analysisResultDao()
+        val timestamp = now.toEpochMilli()
+        insights.forEach { insight ->
+            dao.supersedeCurrent(
+                analysisType = TESTED_INSIGHT_ANALYSIS_TYPE,
+                scope = insight.id,
+                supersededAtEpochMs = timestamp,
+            )
+            dao.insert(insight.toAnalysisResult(now))
+            dao.deleteOldSupersededCurrentSnapshots(
+                analysisType = TESTED_INSIGHT_ANALYSIS_TYPE,
+                scope = insight.id,
+                keepCount = TESTED_INSIGHT_RETENTION,
+            )
+        }
+        return insights
+    }
+
     suspend fun build(
         database: VitaTraceDatabase,
         profile: UserProfileEntity,
@@ -290,6 +319,60 @@ object InsightEngine {
     }
 }
 
+private fun TestedInsight.toAnalysisResult(now: Instant): AnalysisResultEntity {
+    val generatedDate = LocalDate.ofInstant(now, ZoneId.systemDefault()).toString()
+    return AnalysisResultEntity(
+        analysisType = TESTED_INSIGHT_ANALYSIS_TYPE,
+        scope = id,
+        engineVersion = TESTED_INSIGHT_ENGINE_VERSION,
+        baselineStartDate = null,
+        baselineEndDate = null,
+        currentStartDate = dateRange.dateRangeStartOrNull(),
+        currentEndDate = dateRange.dateRangeEndOrNull(),
+        generatedForDate = generatedDate,
+        summaryTitle = title,
+        summaryText = answer,
+        confidence = confidence.name,
+        sampleSize = sampleSize,
+        resultJson = toJson(),
+        sourceCoverageJson = """
+            {
+              "source": "local_room_database",
+              "domain": "${domain.escapeJson()}",
+              "note": "Insight generated from normalized local summaries and detailed imported records."
+            }
+        """.trimIndent(),
+        timeContextJson = """
+            {
+              "generatedAtEpochMs": ${now.toEpochMilli()},
+              "generatedForDate": "$generatedDate"
+            }
+        """.trimIndent(),
+        isCurrent = true,
+        pinned = false,
+        createdAtEpochMs = now.toEpochMilli(),
+        updatedAtEpochMs = now.toEpochMilli(),
+        supersededAtEpochMs = null,
+    )
+}
+
+private fun TestedInsight.toJson(): String {
+    return """
+        {
+          "id": "${id.escapeJson()}",
+          "domain": "${domain.escapeJson()}",
+          "title": "${title.escapeJson()}",
+          "answer": "${answer.escapeJson()}",
+          "evidence": ${evidence.toJsonArray()},
+          "dateRange": "${dateRange.escapeJson()}",
+          "sampleSize": $sampleSize,
+          "confidence": "${confidence.name}",
+          "limitations": ${limitations.toJsonArray()},
+          "nextStep": "${nextStep.escapeJson()}"
+        }
+    """.trimIndent()
+}
+
 private fun stepBuckets(rows: List<SleepActivityFeatureRow>): Map<String, String> {
     val buckets = listOf(
         "lt8k" to (0L..7_999L),
@@ -426,4 +509,35 @@ private fun Double?.formatPace(): String {
 
 private fun Double?.formatSignedSeconds(): String {
     return this?.let { value -> "%+.0f s".format(value) } ?: "brak"
+}
+
+private fun String.dateRangeStartOrNull(): String? {
+    return split(" - ").getOrNull(0)?.takeIf { value -> value.length == 10 }
+}
+
+private fun String.dateRangeEndOrNull(): String? {
+    return split(" - ").getOrNull(1)?.takeIf { value -> value.length == 10 }
+}
+
+private fun List<String>.toJsonArray(): String {
+    return joinToString(
+        prefix = "[",
+        postfix = "]",
+        separator = ",",
+    ) { value -> "\"${value.escapeJson()}\"" }
+}
+
+private fun String.escapeJson(): String {
+    return buildString {
+        this@escapeJson.forEach { char ->
+            when (char) {
+                '\\' -> append("\\\\")
+                '"' -> append("\\\"")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> append(char)
+            }
+        }
+    }
 }

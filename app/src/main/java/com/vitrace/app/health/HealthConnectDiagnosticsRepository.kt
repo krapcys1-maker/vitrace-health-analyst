@@ -113,7 +113,7 @@ object HealthConnectDiagnosticsRepository {
                 bodySummary = database.loadBodyDomainSummary(),
                 healthJournal = database.loadHealthJournalSummary(),
                 analysisContext = analysisContext,
-                insights = InsightEngine.build(database, profile, end),
+                insights = InsightEngine.buildAndPersistCurrent(database, profile, end),
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
             )
@@ -134,7 +134,7 @@ object HealthConnectDiagnosticsRepository {
                 bodySummary = database.loadBodyDomainSummary(),
                 healthJournal = database.loadHealthJournalSummary(),
                 analysisContext = analysisContext,
-                insights = InsightEngine.build(database, profile, end),
+                insights = InsightEngine.buildAndPersistCurrent(database, profile, end),
             )
         }
 
@@ -169,7 +169,7 @@ object HealthConnectDiagnosticsRepository {
                 bodySummary = database.loadBodyDomainSummary(),
                 healthJournal = database.loadHealthJournalSummary(),
                 analysisContext = analysisContext,
-                insights = InsightEngine.build(database, profile, end),
+                insights = InsightEngine.buildAndPersistCurrent(database, profile, end),
             )
         }
 
@@ -212,7 +212,7 @@ object HealthConnectDiagnosticsRepository {
                 bodySummary = database.loadBodyDomainSummary(),
                 healthJournal = database.loadHealthJournalSummary(),
                 analysisContext = analysisContext,
-                insights = InsightEngine.build(database, profile, end),
+                insights = InsightEngine.buildAndPersistCurrent(database, profile, end),
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
             )
@@ -233,7 +233,7 @@ object HealthConnectDiagnosticsRepository {
                 bodySummary = database.loadBodyDomainSummary(),
                 healthJournal = database.loadHealthJournalSummary(),
                 analysisContext = analysisContext,
-                insights = InsightEngine.build(database, profile, end),
+                insights = InsightEngine.buildAndPersistCurrent(database, profile, end),
                 error = error.toUserMessage(),
             )
         }
