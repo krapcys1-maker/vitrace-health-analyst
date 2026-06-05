@@ -18,10 +18,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DailyBodySummaryEntity::class,
         SleepDetailEntity::class,
         WorkoutSessionEntity::class,
+        AnalysisResultEntity::class,
         UserProfileEntity::class,
         HealthNoteEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class VitaTraceDatabase : RoomDatabase() {
@@ -29,6 +30,7 @@ abstract class VitaTraceDatabase : RoomDatabase() {
     abstract fun dailySummaryDao(): DailySummaryDao
     abstract fun userProfileDao(): UserProfileDao
     abstract fun healthNoteDao(): HealthNoteDao
+    abstract fun analysisResultDao(): AnalysisResultDao
 
     companion object {
         @Volatile
@@ -255,6 +257,50 @@ abstract class VitaTraceDatabase : RoomDatabase() {
             }
         }
 
+        private val migration6To7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS analysis_results (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        analysisType TEXT NOT NULL,
+                        scope TEXT NOT NULL,
+                        engineVersion TEXT NOT NULL,
+                        baselineStartDate TEXT,
+                        baselineEndDate TEXT,
+                        currentStartDate TEXT,
+                        currentEndDate TEXT,
+                        generatedForDate TEXT NOT NULL,
+                        summaryTitle TEXT NOT NULL,
+                        summaryText TEXT NOT NULL,
+                        confidence TEXT NOT NULL,
+                        sampleSize INTEGER NOT NULL,
+                        resultJson TEXT NOT NULL,
+                        sourceCoverageJson TEXT NOT NULL,
+                        timeContextJson TEXT NOT NULL,
+                        isCurrent INTEGER NOT NULL,
+                        pinned INTEGER NOT NULL,
+                        createdAtEpochMs INTEGER NOT NULL,
+                        updatedAtEpochMs INTEGER NOT NULL,
+                        supersededAtEpochMs INTEGER
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS index_analysis_results_analysisType_scope_isCurrent
+                    ON analysis_results(analysisType, scope, isCurrent)
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS index_analysis_results_createdAtEpochMs
+                    ON analysis_results(createdAtEpochMs)
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun get(context: Context): VitaTraceDatabase {
             return instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -267,6 +313,7 @@ abstract class VitaTraceDatabase : RoomDatabase() {
                     .addMigrations(migration3To4)
                     .addMigrations(migration4To5)
                     .addMigrations(migration5To6)
+                    .addMigrations(migration6To7)
                     .build().also { database ->
                     instance = database
                 }

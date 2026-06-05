@@ -110,7 +110,7 @@ object HealthConnectDiagnosticsRepository {
                 sportSummary = database.loadSportDomainSummary(profile),
                 bodySummary = database.loadBodyDomainSummary(),
                 healthJournal = database.loadHealthJournalSummary(),
-                analysisContext = AnalysisContextBuilder.build(database, profile),
+                analysisContext = AnalysisContextBuilder.buildAndPersistCurrent(database, profile, end),
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
             )
@@ -129,7 +129,7 @@ object HealthConnectDiagnosticsRepository {
                 sportSummary = database.loadSportDomainSummary(profile),
                 bodySummary = database.loadBodyDomainSummary(),
                 healthJournal = database.loadHealthJournalSummary(),
-                analysisContext = AnalysisContextBuilder.build(database, profile),
+                analysisContext = AnalysisContextBuilder.buildAndPersistCurrent(database, profile, end),
             )
         }
 
@@ -162,7 +162,7 @@ object HealthConnectDiagnosticsRepository {
                 sportSummary = database.loadSportDomainSummary(profile),
                 bodySummary = database.loadBodyDomainSummary(),
                 healthJournal = database.loadHealthJournalSummary(),
-                analysisContext = AnalysisContextBuilder.build(database, profile),
+                analysisContext = AnalysisContextBuilder.buildAndPersistCurrent(database, profile, end),
             )
         }
 
@@ -203,7 +203,7 @@ object HealthConnectDiagnosticsRepository {
                 sportSummary = database.loadSportDomainSummary(profile),
                 bodySummary = database.loadBodyDomainSummary(),
                 healthJournal = database.loadHealthJournalSummary(),
-                analysisContext = AnalysisContextBuilder.build(database, profile),
+                analysisContext = AnalysisContextBuilder.buildAndPersistCurrent(database, profile, end),
                 savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 dailySyncSummary = database.loadDailySyncSummary(),
             )
@@ -222,7 +222,7 @@ object HealthConnectDiagnosticsRepository {
                 sportSummary = database.loadSportDomainSummary(profile),
                 bodySummary = database.loadBodyDomainSummary(),
                 healthJournal = database.loadHealthJournalSummary(),
-                analysisContext = AnalysisContextBuilder.build(database, profile),
+                analysisContext = AnalysisContextBuilder.buildAndPersistCurrent(database, profile, end),
                 error = error.toUserMessage(),
             )
         }

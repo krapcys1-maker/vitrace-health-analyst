@@ -940,6 +940,9 @@ private fun PersonalAnalysisContextCard(
             "sen/fazy: ${analysisContext.monthlySleepPhases.size} miesiecy",
             "sen + aktywnosc: ${comparison.totalSampleDays} wspolnych dni",
             "sport: ${sportMonths.size} miesiecznych trendow chodzenia/biegania",
+            "aktualne okno: ${analysisContext.timeContext.currentStartDate} - ${analysisContext.timeContext.currentEndDate}",
+            "dzisiaj: ${analysisContext.timeContext.currentPartialDay} jest dniem czesciowym",
+            "zapis analizy: ${analysisContext.currentSleepActivityResult?.id ?: "brak"} current_snapshot",
             "AI dostanie te wyniki jako AiHealthSummary, nie kafelki z UI",
         ),
         quality = if (comparison.confidence == AnalysisConfidence.Insufficient) DiagnosticQuality.Warning else DiagnosticQuality.Good,
@@ -967,6 +970,7 @@ private fun SleepActivityAnalysisCard(
     AnalysisCard(
         title = "Ruch a sen",
         lines = listOf(
+            "liczone na zamknietych dniach do ${analysisContext.timeContext.currentEndDate}",
             "prog aktywnosci: ${comparison.stepThreshold?.formatWhole() ?: "brak"} krokow",
             "probka: ${comparison.highActivityDays} aktywniejszych dni vs ${comparison.lowerActivityDays} slabszych dni",
             "sen lacznie: ${delta.totalSleepMinutes.formatSignedMinutes()}",

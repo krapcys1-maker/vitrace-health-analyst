@@ -1,17 +1,26 @@
 package com.vitrace.app.analysis
 
+import com.vitrace.app.data.AnalysisResultEntity
 import com.vitrace.app.data.MonthlySleepPhaseAggregate
 import com.vitrace.app.data.MonthlyWorkoutSessionAggregate
 import com.vitrace.app.data.SleepActivityFeatureRow
 import com.vitrace.app.data.UserProfileEntity
 import com.vitrace.app.data.VitaTraceDatabase
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlin.math.abs
+
+private const val SLEEP_ACTIVITY_ENGINE_VERSION = "sleep_activity_v1"
+private const val CURRENT_SCOPE = "current_snapshot"
 
 data class PersonalAnalysisContext(
     val profile: AnalysisProfile,
+    val timeContext: AnalysisTimeContext,
     val monthlySleepPhases: List<MonthlySleepPhaseAnalysis>,
     val sleepActivityComparison: SleepActivityComparison,
     val monthlySportTrends: List<MonthlySportTrend>,
+    val currentSleepActivityResult: AnalysisResultEntity?,
 )
 
 data class AnalysisProfile(
@@ -40,6 +49,36 @@ data class MonthlySleepPhaseAnalysis(
 
     val remPercent: Double?
         get() = avgRemSleepMinutes.percentOf(avgTotalSleepMinutes)
+}
+
+data class AnalysisTimeContext(
+    val today: String,
+    val currentStartDate: String,
+    val currentEndDate: String,
+    val baselineStartDate: String?,
+    val baselineEndDate: String?,
+    val recentMaybeIncompleteDays: List<String>,
+    val currentPartialDay: String,
+) {
+    fun stateFor(date: String): DayAnalysisState {
+        return when {
+            date == currentPartialDay -> DayAnalysisState.CurrentPartial
+            recentMaybeIncompleteDays.contains(date) -> DayAnalysisState.RecentMaybeIncomplete
+            date < currentStartDate -> DayAnalysisState.HistoricalComplete
+            date <= currentEndDate -> DayAnalysisState.CurrentClosed
+            else -> DayAnalysisState.FutureOrUnknown
+        }
+    }
+}
+
+enum class DayAnalysisState {
+    HistoricalComplete,
+    CurrentClosed,
+    CurrentPartial,
+    RecentMaybeIncomplete,
+    MissingData,
+    MixedSource,
+    FutureOrUnknown,
 }
 
 data class SleepActivityComparison(
@@ -105,19 +144,41 @@ object AnalysisContextBuilder {
     suspend fun build(
         database: VitaTraceDatabase,
         profile: UserProfileEntity,
+        now: Instant = Instant.now(),
     ): PersonalAnalysisContext {
         val dao = database.dailySummaryDao()
+        val timeContext = buildTimeContext(now)
         val sleepActivityRows = dao.sleepActivityFeatureRows()
+            .filter { row -> timeContext.stateFor(row.date) != DayAnalysisState.CurrentPartial }
+            .filter { row -> timeContext.stateFor(row.date) != DayAnalysisState.FutureOrUnknown }
+        val comparison = buildSleepActivityComparison(sleepActivityRows)
         return PersonalAnalysisContext(
             profile = profile.toAnalysisProfile(),
+            timeContext = timeContext,
             monthlySleepPhases = dao.monthlySleepPhases(limit = 12).map { aggregate ->
                 aggregate.toAnalysis()
             },
-            sleepActivityComparison = buildSleepActivityComparison(sleepActivityRows),
+            sleepActivityComparison = comparison,
             monthlySportTrends = dao.monthlyWorkoutSessions(
                 workoutTypes = listOf("walking", "running"),
                 limit = 24,
             ).map { aggregate -> aggregate.toTrend() },
+            currentSleepActivityResult = database.analysisResultDao().current("sleep_activity", CURRENT_SCOPE),
+        )
+    }
+
+    suspend fun buildAndPersistCurrent(
+        database: VitaTraceDatabase,
+        profile: UserProfileEntity,
+        now: Instant = Instant.now(),
+    ): PersonalAnalysisContext {
+        val context = build(database, profile, now)
+        val result = context.toSleepActivityResult(now)
+        val dao = database.analysisResultDao()
+        dao.supersedeCurrent(result.analysisType, result.scope, now.toEpochMilli())
+        dao.insert(result)
+        return context.copy(
+            currentSleepActivityResult = dao.current("sleep_activity", CURRENT_SCOPE),
         )
     }
 
@@ -162,6 +223,57 @@ object AnalysisContextBuilder {
             interpretation = interpretationFor(delta, confidence),
         )
     }
+
+    private fun buildTimeContext(now: Instant): AnalysisTimeContext {
+        val today = LocalDate.ofInstant(now, ZoneId.systemDefault())
+        val currentEnd = today.minusDays(1)
+        val currentStart = currentEnd.minusDays(29)
+        val baselineEnd = currentStart.minusDays(1)
+        return AnalysisTimeContext(
+            today = today.toString(),
+            currentStartDate = currentStart.toString(),
+            currentEndDate = currentEnd.toString(),
+            baselineStartDate = null,
+            baselineEndDate = baselineEnd.toString(),
+            recentMaybeIncompleteDays = listOf(currentEnd.toString()),
+            currentPartialDay = today.toString(),
+        )
+    }
+}
+
+private fun PersonalAnalysisContext.toSleepActivityResult(now: Instant): AnalysisResultEntity {
+    val comparison = sleepActivityComparison
+    val delta = comparison.delta
+    val summary = if (delta == null) {
+        comparison.interpretation
+    } else {
+        "prog ${comparison.stepThreshold ?: 0} krokow; sen ${delta.totalSleepMinutes.formatSigned0()} min; " +
+            "REM ${delta.remSleepPercent.formatSignedPercentJson()}; " +
+            "gleboki ${delta.deepSleepPercent.formatSignedPercentJson()}; " +
+            "plytki ${delta.lightSleepPercent.formatSignedPercentJson()}"
+    }
+    return AnalysisResultEntity(
+        analysisType = "sleep_activity",
+        scope = CURRENT_SCOPE,
+        engineVersion = SLEEP_ACTIVITY_ENGINE_VERSION,
+        baselineStartDate = timeContext.baselineStartDate,
+        baselineEndDate = timeContext.baselineEndDate,
+        currentStartDate = timeContext.currentStartDate,
+        currentEndDate = timeContext.currentEndDate,
+        generatedForDate = timeContext.today,
+        summaryTitle = "Ruch a sen",
+        summaryText = summary,
+        confidence = comparison.confidence.name,
+        sampleSize = comparison.totalSampleDays,
+        resultJson = comparison.toJson(),
+        sourceCoverageJson = sourceCoverageJson(),
+        timeContextJson = timeContext.toJson(),
+        isCurrent = true,
+        pinned = false,
+        createdAtEpochMs = now.toEpochMilli(),
+        updatedAtEpochMs = now.toEpochMilli(),
+        supersededAtEpochMs = null,
+    )
 }
 
 private fun UserProfileEntity.toAnalysisProfile(): AnalysisProfile {
@@ -272,6 +384,86 @@ private fun interpretationFor(
     }
 }
 
+private fun SleepActivityComparison.toJson(): String {
+    val delta = delta
+    return """
+        {
+          "analysisType": "sleep_activity",
+          "stepThreshold": ${stepThreshold.jsonNumber()},
+          "sample": {
+            "totalDays": $totalSampleDays,
+            "highActivityDays": $highActivityDays,
+            "lowerActivityDays": $lowerActivityDays
+          },
+          "confidence": "${confidence.name}",
+          "highActivity": ${highActivity.toJson()},
+          "lowerActivity": ${lowerActivity.toJson()},
+          "delta": ${delta.toJson()},
+          "interpretation": "${interpretation.escapeJson()}"
+        }
+    """.trimIndent()
+}
+
+private fun SleepAverages?.toJson(): String {
+    if (this == null) {
+        return "null"
+    }
+    return """
+        {
+          "avgSteps": ${avgSteps.jsonNumber()},
+          "avgTotalSleepMinutes": ${avgTotalSleepMinutes.jsonNumber()},
+          "avgDeepSleepMinutes": ${avgDeepSleepMinutes.jsonNumber()},
+          "avgLightSleepMinutes": ${avgLightSleepMinutes.jsonNumber()},
+          "avgRemSleepMinutes": ${avgRemSleepMinutes.jsonNumber()},
+          "avgAwakeMinutes": ${avgAwakeMinutes.jsonNumber()},
+          "avgSleepScore": ${avgSleepScore.jsonNumber()}
+        }
+    """.trimIndent()
+}
+
+private fun SleepDelta?.toJson(): String {
+    if (this == null) {
+        return "null"
+    }
+    return """
+        {
+          "totalSleepMinutes": ${totalSleepMinutes.jsonNumber()},
+          "deepSleepPercent": ${deepSleepPercent.jsonNumber()},
+          "lightSleepPercent": ${lightSleepPercent.jsonNumber()},
+          "remSleepPercent": ${remSleepPercent.jsonNumber()},
+          "awakeMinutes": ${awakeMinutes.jsonNumber()},
+          "sleepScore": ${sleepScore.jsonNumber()}
+        }
+    """.trimIndent()
+}
+
+private fun PersonalAnalysisContext.sourceCoverageJson(): String {
+    return """
+        {
+          "historicalSource": "MI_FITNESS_EXPORT",
+          "liveSource": "HEALTH_CONNECT",
+          "sleepPhaseMonths": ${monthlySleepPhases.size},
+          "sleepActivityDays": ${sleepActivityComparison.totalSampleDays},
+          "sportTrendRows": ${monthlySportTrends.size},
+          "note": "History is richer than current live Health Connect coverage."
+        }
+    """.trimIndent()
+}
+
+private fun AnalysisTimeContext.toJson(): String {
+    return """
+        {
+          "today": "$today",
+          "currentPartialDay": "$currentPartialDay",
+          "currentStartDate": "$currentStartDate",
+          "currentEndDate": "$currentEndDate",
+          "baselineStartDate": ${baselineStartDate.jsonString()},
+          "baselineEndDate": ${baselineEndDate.jsonString()},
+          "recentMaybeIncompleteDays": [${recentMaybeIncompleteDays.joinToString(",") { day -> day.jsonString() }}]
+        }
+    """.trimIndent()
+}
+
 private fun Double?.percentOf(total: Double): Double? {
     if (this == null || total <= 0.0) {
         return null
@@ -298,4 +490,35 @@ private fun <T : Number> List<T>.averageOrNull(): Double? {
         return null
     }
     return map { number -> number.toDouble() }.average()
+}
+
+private fun Number?.jsonNumber(): String {
+    return this?.toString() ?: "null"
+}
+
+private fun String?.jsonString(): String {
+    return this?.let { value -> "\"${value.escapeJson()}\"" } ?: "null"
+}
+
+private fun String.escapeJson(): String {
+    return buildString {
+        this@escapeJson.forEach { char ->
+            when (char) {
+                '\\' -> append("\\\\")
+                '"' -> append("\\\"")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> append(char)
+            }
+        }
+    }
+}
+
+private fun Double.formatSigned0(): String {
+    return "%+.0f".format(this)
+}
+
+private fun Double?.formatSignedPercentJson(): String {
+    return this?.let { value -> "%+.0f%%".format(value) } ?: "brak"
 }

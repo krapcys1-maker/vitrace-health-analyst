@@ -50,6 +50,52 @@ UI: Analiza, Sen, Sport, Waga, Zdrowie
 
 AI does not calculate from raw rows. AI receives deterministic findings with sample size, date range, confidence, and missing-data flags.
 
+## Analysis Result Storage
+
+Deterministic analyses should be stored in `analysis_results`.
+
+Two scopes are required:
+
+- `current_snapshot`: the latest calculated result for a given analysis type. It is replaced when the engine recalculates.
+- `saved_report`: a user-pinned or explicitly saved report, for example a monthly sleep report. Saved reports remain visible until the user removes them.
+
+Each result stores:
+
+- analysis type, for example `sleep_activity`
+- engine version
+- baseline period
+- current period
+- generated-for date
+- summary title and text
+- confidence and sample size
+- result JSON
+- source coverage JSON
+- time context JSON
+- current/pinned/superseded flags
+
+This prevents analysis history from becoming a dumping ground while still allowing important reports to be saved.
+
+## Time Context
+
+The engine must know which days are historical, current, partial, or possibly incomplete.
+
+Default rule for daily trend analysis:
+
+- today is `current_partial` and is not used as a closed-day trend input
+- yesterday may be `recent_maybe_incomplete` depending on source freshness
+- current period uses closed days, for example the last 30 closed days
+- baseline period ends before the current period
+- missing data is not treated as missing behavior
+
+Every insight should expose:
+
+- current period
+- baseline period when used
+- generated-for date
+- source coverage
+- confidence
+- sample size
+
 ## Sleep Analytics
 
 The `Sen` tab should have focused sections:
