@@ -139,6 +139,7 @@ When phone access is not available, use the latest pulled database copy and run:
 ```powershell
 python -m py_compile tools\audit_insights.py
 python tools\audit_insights.py --db build\phone-db-check\vitrace-after-am-start.db
+python tools\offline_signal_report.py --db build\phone-db-check\vitrace-after-am-start.db --output build\offline-signal-report.md
 .\gradlew.bat :app:assembleDebug
 ```
 
@@ -147,3 +148,5 @@ When changing audit behavior, also run:
 ```powershell
 python -m unittest discover -s tests
 ```
+
+Do not commit generated reports from `build/`; they may summarize private health data.
