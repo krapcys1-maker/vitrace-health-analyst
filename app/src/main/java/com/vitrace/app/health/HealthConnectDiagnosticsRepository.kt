@@ -7,31 +7,39 @@ import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
-import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
 import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
+import com.vitrace.app.data.HealthConnectQualitySnapshotEntity
+import com.vitrace.app.data.VitaTraceDatabase
 import java.time.Duration
 import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlin.reflect.KClass
 
 object HealthConnectDiagnosticsRepository {
-    val requiredPermissions: Set<String> = setOf(
-        HealthPermission.getReadPermission(StepsRecord::class),
-        HealthPermission.getReadPermission(DistanceRecord::class),
-        HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class),
-        HealthPermission.getReadPermission(HeartRateRecord::class),
-        HealthPermission.getReadPermission(SleepSessionRecord::class),
-        HealthPermission.getReadPermission(ExerciseSessionRecord::class),
-        HealthPermission.getReadPermission(Vo2MaxRecord::class),
-        HealthPermission.getReadPermission(OxygenSaturationRecord::class),
-        HealthPermission.getReadPermission(WeightRecord::class),
+    private val metricSpecs = listOf(
+        MetricSpec("steps", "Steps", StepsRecord::class),
+        MetricSpec("distance", "Distance", DistanceRecord::class),
+        MetricSpec("active_calories", "Active calories", ActiveCaloriesBurnedRecord::class),
+        MetricSpec("heart_rate", "Heart rate", HeartRateRecord::class),
+        MetricSpec("sleep", "Sleep", SleepSessionRecord::class),
+        MetricSpec("exercise", "Exercise", ExerciseSessionRecord::class),
+        MetricSpec("vo2_max", "VO2 max", Vo2MaxRecord::class),
+        MetricSpec("spo2", "SpO2", OxygenSaturationRecord::class),
+        MetricSpec("weight", "Weight", WeightRecord::class),
     )
+
+    val requiredPermissions: Set<String> = metricSpecs
+        .map { metric -> metric.permission }
+        .toSet()
 
     fun getSdkStatus(context: Context): HealthConnectSdkStatus {
         return when (HealthConnectClient.getSdkStatus(context)) {
@@ -43,80 +51,57 @@ object HealthConnectDiagnosticsRepository {
     }
 
     suspend fun load(context: Context): HealthConnectDiagnostics {
+        val database = VitaTraceDatabase.get(context)
         val sdkStatus = getSdkStatus(context)
         if (sdkStatus != HealthConnectSdkStatus.Available) {
             return HealthConnectDiagnostics(
                 sdkStatus = sdkStatus,
                 requiredPermissionCount = requiredPermissions.size,
+                savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
             )
         }
 
         val client = HealthConnectClient.getOrCreate(context)
         val granted = client.permissionController.getGrantedPermissions()
+        val grantedRequired = granted.intersect(requiredPermissions)
         val end = Instant.now()
 
         if (!granted.containsAll(requiredPermissions)) {
             return HealthConnectDiagnostics(
                 sdkStatus = sdkStatus,
-                grantedPermissionCount = granted.intersect(requiredPermissions).size,
+                grantedPermissionCount = grantedRequired.size,
                 requiredPermissionCount = requiredPermissions.size,
                 rows = listOf(
                     DiagnosticRow(
                         label = "Permissions",
-                        value = "${granted.intersect(requiredPermissions).size}/${requiredPermissions.size}",
+                        value = "${grantedRequired.size}/${requiredPermissions.size}",
                         quality = DiagnosticQuality.Warning,
                     )
                 ),
+                dataQualityItems = metricSpecs.map { metric ->
+                    metric.emptyQualityItem(hasPermission = granted.contains(metric.permission))
+                },
+                savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
             )
         }
 
         return try {
+            val qualityItems = metricSpecs.map { metric ->
+                metric.loadQualityItem(client, end)
+            }
+            val snapshots = qualityItems.map { item ->
+                item.toSnapshot(capturedAt = end)
+            }
+            database.healthConnectQualitySnapshotDao().insertAll(snapshots)
+
             val rows = buildList {
                 addRangeSummary(client, end, days = 1)
                 addRangeSummary(client, end, days = 7)
                 addRangeSummary(client, end, days = 30)
-
-                val start = end.minus(Duration.ofDays(7))
-                val thirtyDaysStart = end.minus(Duration.ofDays(30))
                 add(
                     DiagnosticRow(
-                        label = "Heart records, 7 days",
-                        value = countRecords(client, HeartRateRecord::class, start, end).toString(),
-                        quality = DiagnosticQuality.Neutral,
-                    )
-                )
-                add(
-                    DiagnosticRow(
-                        label = "Sleep sessions, 7 days",
-                        value = countRecords(client, SleepSessionRecord::class, start, end).toString(),
-                        quality = DiagnosticQuality.Neutral,
-                    )
-                )
-                add(
-                    DiagnosticRow(
-                        label = "Exercise sessions, 7 days",
-                        value = countRecords(client, ExerciseSessionRecord::class, start, end).toString(),
-                        quality = DiagnosticQuality.Neutral,
-                    )
-                )
-                add(
-                    DiagnosticRow(
-                        label = "Active kcal records, 30d",
-                        value = countRecords(client, ActiveCaloriesBurnedRecord::class, thirtyDaysStart, end).toString(),
-                        quality = DiagnosticQuality.Neutral,
-                    )
-                )
-                add(
-                    DiagnosticRow(
-                        label = "Step origins, 7d",
-                        value = readDataOrigins(client, StepsRecord::class, start, end).joinToString().ifBlank { "none" },
-                        quality = DiagnosticQuality.Neutral,
-                    )
-                )
-                add(
-                    DiagnosticRow(
-                        label = "Active kcal origins, 30d",
-                        value = readDataOrigins(client, ActiveCaloriesBurnedRecord::class, thirtyDaysStart, end).joinToString().ifBlank { "none" },
+                        label = "Quality snapshots",
+                        value = database.healthConnectQualitySnapshotDao().count().toString(),
                         quality = DiagnosticQuality.Neutral,
                     )
                 )
@@ -127,12 +112,15 @@ object HealthConnectDiagnosticsRepository {
                 grantedPermissionCount = requiredPermissions.size,
                 requiredPermissionCount = requiredPermissions.size,
                 rows = rows,
+                dataQualityItems = qualityItems,
+                savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
             )
         } catch (error: Exception) {
             HealthConnectDiagnostics(
                 sdkStatus = sdkStatus,
                 grantedPermissionCount = requiredPermissions.size,
                 requiredPermissionCount = requiredPermissions.size,
+                savedSnapshotCount = database.healthConnectQualitySnapshotDao().count(),
                 error = error.message ?: error::class.java.simpleName,
             )
         }
@@ -179,9 +167,50 @@ object HealthConnectDiagnosticsRepository {
         )
     }
 
-    private suspend fun <T : Record> countRecords(
+    private suspend fun MetricSpec<out Record>.loadQualityItem(
         client: HealthConnectClient,
-        type: KClass<T>,
+        end: Instant,
+    ): DataQualityItem {
+        val count1d = countRecords(client, type, end.minus(Duration.ofDays(1)), end)
+        val count7d = countRecords(client, type, end.minus(Duration.ofDays(7)), end)
+        val summary30d = readRecordSummary(client, type, end.minus(Duration.ofDays(30)), end)
+        val quality = when {
+            summary30d.count > 0 -> DiagnosticQuality.Good
+            else -> DiagnosticQuality.Warning
+        }
+
+        return DataQualityItem(
+            key = key,
+            label = label,
+            hasPermission = true,
+            count1d = count1d,
+            count7d = count7d,
+            count30d = summary30d.count,
+            origins = summary30d.origins,
+            lastRecordAt = summary30d.lastRecordAt?.formatLocal(),
+            lastRecordAtEpochMs = summary30d.lastRecordAt?.toEpochMilli(),
+            quality = quality,
+        )
+    }
+
+    private fun MetricSpec<out Record>.emptyQualityItem(hasPermission: Boolean): DataQualityItem {
+        return DataQualityItem(
+            key = key,
+            label = label,
+            hasPermission = hasPermission,
+            count1d = 0,
+            count7d = 0,
+            count30d = 0,
+            origins = emptySet(),
+            lastRecordAt = null,
+            lastRecordAtEpochMs = null,
+            quality = if (hasPermission) DiagnosticQuality.Neutral else DiagnosticQuality.Warning,
+        )
+    }
+
+    private suspend fun countRecords(
+        client: HealthConnectClient,
+        type: KClass<out Record>,
         start: Instant,
         end: Instant,
     ): Int {
@@ -201,24 +230,95 @@ object HealthConnectDiagnosticsRepository {
         return count
     }
 
-    private suspend fun readDataOrigins(
+    private suspend fun readRecordSummary(
         client: HealthConnectClient,
         type: KClass<out Record>,
         start: Instant,
         end: Instant,
-    ): Set<String> {
-        val response = client.readRecords(
-            ReadRecordsRequest(
-                recordType = type,
-                timeRangeFilter = TimeRangeFilter.between(start, end),
+    ): RecordSummary {
+        var count = 0
+        val origins = mutableSetOf<String>()
+        var lastRecordAt: Instant? = null
+        var pageToken: String? = null
+
+        do {
+            val response = client.readRecords(
+                ReadRecordsRequest(
+                    recordType = type,
+                    timeRangeFilter = TimeRangeFilter.between(start, end),
+                    pageToken = pageToken,
+                )
             )
+            count += response.records.size
+            response.records.forEach { record ->
+                record.metadata.dataOrigin.packageName.let(origins::add)
+                val candidate = record.latestMeasurementTime()
+                if (candidate != null && (lastRecordAt == null || candidate.isAfter(lastRecordAt))) {
+                    lastRecordAt = candidate
+                }
+            }
+            pageToken = response.pageToken
+        } while (pageToken != null)
+
+        return RecordSummary(
+            count = count,
+            origins = origins,
+            lastRecordAt = lastRecordAt,
         )
-        return response.records
-            .mapNotNull { record -> record.metadata.dataOrigin.packageName }
-            .toSet()
+    }
+
+    private fun DataQualityItem.toSnapshot(capturedAt: Instant): HealthConnectQualitySnapshotEntity {
+        return HealthConnectQualitySnapshotEntity(
+            capturedAtEpochMs = capturedAt.toEpochMilli(),
+            metricKey = key,
+            label = label,
+            hasPermission = hasPermission,
+            count1d = count1d,
+            count7d = count7d,
+            count30d = count30d,
+            origins = origins.joinToString(),
+            lastRecordAtEpochMs = lastRecordAtEpochMs,
+            status = quality.name,
+        )
+    }
+
+    private fun Record.latestMeasurementTime(): Instant? {
+        return when (this) {
+            is ActiveCaloriesBurnedRecord -> endTime
+            is DistanceRecord -> endTime
+            is ExerciseSessionRecord -> endTime
+            is HeartRateRecord -> samples.maxOfOrNull { sample -> sample.time }
+            is OxygenSaturationRecord -> time
+            is SleepSessionRecord -> endTime
+            is StepsRecord -> endTime
+            is Vo2MaxRecord -> time
+            is WeightRecord -> time
+            else -> null
+        }
+    }
+
+    private fun Instant.formatLocal(): String {
+        return DateTimeFormatter
+            .ofPattern("yyyy-MM-dd HH:mm")
+            .withZone(ZoneId.systemDefault())
+            .format(this)
     }
 
     private fun Double.format0(): String = "%,.0f".format(this)
 
     private fun Double.format1(): String = "%,.1f".format(this)
 }
+
+private data class MetricSpec<T : Record>(
+    val key: String,
+    val label: String,
+    val type: KClass<T>,
+) {
+    val permission: String = HealthPermission.getReadPermission(type)
+}
+
+private data class RecordSummary(
+    val count: Int,
+    val origins: Set<String>,
+    val lastRecordAt: Instant?,
+)

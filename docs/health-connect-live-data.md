@@ -51,6 +51,14 @@ Implement Health Connect in this order:
 8. Recalculate only changed days after sync.
 9. Add WorkManager background sync only after foreground sync is proven.
 
+Current implementation:
+
+- Health Connect availability and permission checks are implemented.
+- The app reads 1/7/30-day counts for the MVP data types.
+- The app shows data origins and last available record timestamps.
+- Each refresh stores a data quality snapshot in the local Room database.
+- Full normalized daily sync tables are not implemented yet.
+
 ## Permissions And History
 
 Health Connect normally allows reading data up to 30 days before the first permission grant. Older reads require the Health Connect history permission.

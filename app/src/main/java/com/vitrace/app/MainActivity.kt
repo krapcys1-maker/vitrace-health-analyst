@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
+import com.vitrace.app.health.DataQualityItem
 import com.vitrace.app.health.DiagnosticQuality
 import com.vitrace.app.health.DiagnosticRow
 import com.vitrace.app.health.HealthConnectDiagnostics
@@ -118,6 +119,7 @@ private fun HealthConnectScreen() {
             },
             onRefresh = { refresh() },
         )
+        DataQualitySection(items = diagnostics?.dataQualityItems.orEmpty())
         RowsSection(rows = diagnostics?.rows.orEmpty())
         diagnostics?.error?.let { error ->
             ErrorSection(error)
@@ -150,7 +152,7 @@ private fun Header() {
             color = Color(0xFF0F172A),
         )
         Text(
-            text = "Health Connect diagnostics",
+            text = "Health Connect data quality",
             style = MaterialTheme.typography.titleMedium,
             color = Color(0xFF475569),
         )
@@ -218,10 +220,15 @@ private fun ActionSection(
 
 @Composable
 private fun RowsSection(rows: List<DiagnosticRow>) {
+    if (rows.isEmpty()) {
+        return
+    }
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
+        SectionTitle("Activity summary")
         rows.forEachIndexed { index, row ->
             if (index > 0) {
                 HorizontalDivider(color = Color(0xFFE2E8F0))
@@ -229,6 +236,86 @@ private fun RowsSection(rows: List<DiagnosticRow>) {
             InfoRow(label = row.label, value = row.value, quality = row.quality)
         }
     }
+}
+
+@Composable
+private fun DataQualitySection(items: List<DataQualityItem>) {
+    if (items.isEmpty()) {
+        return
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        SectionTitle("Data quality")
+        items.forEachIndexed { index, item ->
+            if (index > 0) {
+                HorizontalDivider(color = Color(0xFFE2E8F0))
+            }
+            DataQualityRow(item)
+        }
+    }
+}
+
+@Composable
+private fun DataQualityRow(item: DataQualityItem) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = item.label,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color(0xFF334155),
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = item.statusLabel(),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 12.dp),
+                style = MaterialTheme.typography.bodyLarge,
+                color = item.quality.color(),
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.End,
+            )
+        }
+        Text(
+            text = "1d ${item.count1d} | 7d ${item.count7d} | 30d ${item.count30d}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color(0xFF475569),
+        )
+        Text(
+            text = "source: ${item.origins.joinToString().ifBlank { "none" }}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color(0xFF475569),
+        )
+        Text(
+            text = "last: ${item.lastRecordAt ?: "none"}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color(0xFF475569),
+        )
+    }
+}
+
+@Composable
+private fun SectionTitle(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleMedium,
+        color = Color(0xFF0F172A),
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+    )
 }
 
 @Composable
@@ -277,6 +364,14 @@ private fun InfoRow(
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.End,
         )
+    }
+}
+
+private fun DataQualityItem.statusLabel(): String {
+    return when {
+        !hasPermission -> "no permission"
+        count30d > 0 -> "records found"
+        else -> "no records"
     }
 }
 

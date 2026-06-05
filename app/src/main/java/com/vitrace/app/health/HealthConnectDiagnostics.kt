@@ -5,6 +5,8 @@ data class HealthConnectDiagnostics(
     val grantedPermissionCount: Int = 0,
     val requiredPermissionCount: Int = 0,
     val rows: List<DiagnosticRow> = emptyList(),
+    val dataQualityItems: List<DataQualityItem> = emptyList(),
+    val savedSnapshotCount: Int = 0,
     val error: String? = null,
 ) {
     val hasAllPermissions: Boolean
@@ -24,9 +26,21 @@ data class DiagnosticRow(
     val quality: DiagnosticQuality,
 )
 
+data class DataQualityItem(
+    val key: String,
+    val label: String,
+    val hasPermission: Boolean,
+    val count1d: Int,
+    val count7d: Int,
+    val count30d: Int,
+    val origins: Set<String>,
+    val lastRecordAt: String?,
+    val lastRecordAtEpochMs: Long?,
+    val quality: DiagnosticQuality,
+)
+
 enum class DiagnosticQuality {
     Good,
     Warning,
     Neutral,
 }
-
